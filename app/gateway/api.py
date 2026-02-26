@@ -276,7 +276,7 @@ async def create_key(
     # Validate feature permissions against tier
     if req.can_scan and not auth.can("evolution_scanner"):
         raise HTTPException(status_code=403, detail="Scanner not available on your plan")
-    if req.can_voice and not auth.can("voice_personalities"):
+    if req.can_voice and not auth.tier_limits.get("situational_voices", 0):
         raise HTTPException(status_code=403, detail="Voice not available on your plan")
     if req.can_cascade and not auth.can("cascade_routing"):
         raise HTTPException(status_code=403, detail="Cascade routing not available on your plan")
@@ -464,7 +464,7 @@ async def upgrade_tier(
         for key in account.api_keys:
             if key.status == KeyStatus.ACTIVE.value:
                 key.can_scan = bool(limits.get("evolution_scanner"))
-                key.can_voice = bool(limits.get("voice_personalities"))
+                key.can_voice = bool(limits.get("situational_voices", 0))
                 key.can_cascade = bool(limits.get("cascade_routing"))
                 key.can_clone_voice = bool(limits.get("voice_cloning"))
 
@@ -526,7 +526,7 @@ async def check_features(auth: GatewayAuth = Depends(validate_api_key)):
         "features": {
             "chat": auth.api_key.can_chat,
             "evolution_scanner": bool(limits.get("evolution_scanner")),
-            "voice_personalities": limits.get("voice_personalities", False),
+            "situational_voices": limits.get("situational_voices", 0),
             "cascade_routing": bool(limits.get("cascade_routing")),
             "emotion_detection": bool(limits.get("emotion_detection")),
             "voice_cloning": bool(limits.get("voice_cloning")),

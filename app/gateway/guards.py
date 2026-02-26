@@ -93,7 +93,7 @@ async def premium_voice(
     """
     if _is_dev_mode():
         auth = await optional_api_key(request, x_elysian_key, authorization, db)
-        if auth and not auth.can("voice_personalities"):
+        if auth and not auth.tier_limits.get("situational_voices", 0):
             raise HTTPException(
                 status_code=403,
                 detail="Voice features not available on your plan",
@@ -101,7 +101,7 @@ async def premium_voice(
         return auth
 
     auth = await validate_api_key(request, x_elysian_key, authorization, db)
-    if not auth.can("voice_personalities"):
+    if not auth.tier_limits.get("situational_voices", 0):
         raise HTTPException(
             status_code=403,
             detail={

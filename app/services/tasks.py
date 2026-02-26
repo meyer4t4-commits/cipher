@@ -8,7 +8,7 @@ from celery import Celery
 from app.core.config import settings
 
 celery_app = Celery(
-    "orchid",
+    "cipher",
     broker=settings.redis_url,
     backend=settings.redis_url,
 )
@@ -24,7 +24,7 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name="orchid.summarize_conversation")
+@celery_app.task(name="cipher.summarize_conversation")
 def summarize_conversation(conversation_id: str) -> dict:
     """
     Summarize a long conversation into key points.
@@ -65,7 +65,7 @@ def summarize_conversation(conversation_id: str) -> dict:
         db.close()
 
 
-@celery_app.task(name="orchid.index_document")
+@celery_app.task(name="cipher.index_document")
 def index_document(content: str, metadata: dict = None) -> dict:
     """
     Index a document into ChromaDB for RAG retrieval.
@@ -104,7 +104,7 @@ def index_document(content: str, metadata: dict = None) -> dict:
         mem_id = store_memory(
             content=chunk,
             metadata=chunk_meta,
-            collection_name="orchid_documents",
+            collection_name="cipher_documents",
         )
         stored_ids.append(mem_id)
 

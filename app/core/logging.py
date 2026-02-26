@@ -1,5 +1,5 @@
 """
-Structured logging configuration for Orchid.
+Structured logging configuration for Cipher.
 Uses rich for beautiful console output during development.
 """
 
@@ -35,7 +35,7 @@ def setup_logging() -> logging.Logger:
     logging.getLogger("chromadb").setLevel(logging.WARNING)
     logging.getLogger("litellm").setLevel(logging.WARNING)
 
-    logger = logging.getLogger("orchid")
+    logger = logging.getLogger("cipher")
     logger.setLevel(level)
     return logger
 

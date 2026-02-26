@@ -1,5 +1,5 @@
 """
-Memory API endpoints - Orchid's long-term knowledge management.
+Memory API endpoints - Cipher's long-term knowledge management.
 """
 
 from fastapi import APIRouter, HTTPException
@@ -18,18 +18,18 @@ router = APIRouter(prefix="/memory", tags=["memory"])
 class MemoryStoreRequest(BaseModel):
     content: str
     metadata: dict = {}
-    collection: str = "orchid_memory"
+    collection: str = "cipher_memory"
 
 
 class MemorySearchRequest(BaseModel):
     query: str
     n_results: int = 5
-    collection: str = "orchid_memory"
+    collection: str = "cipher_memory"
 
 
 @router.post("/store")
 async def store(request: MemoryStoreRequest):
-    """Store a piece of information in Orchid's long-term memory."""
+    """Store a piece of information in Cipher's long-term memory."""
     memory_id = store_memory(
         content=request.content,
         metadata=request.metadata,
@@ -40,7 +40,7 @@ async def store(request: MemoryStoreRequest):
 
 @router.post("/recall")
 async def recall(request: MemorySearchRequest):
-    """Search Orchid's memory for relevant information."""
+    """Search Cipher's memory for relevant information."""
     memories = recall_memories(
         query=request.query,
         n_results=request.n_results,

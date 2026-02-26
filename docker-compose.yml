@@ -1,19 +1,19 @@
 # ============================================================
-# Orchid - Full Stack Docker Compose
+# Cipher - Full Stack Docker Compose (Elysian Protocol)
 # Run: docker compose up -d
 # ============================================================
 
 services:
-  # --- Orchid API Server ---
-  orchid:
+  # --- Cipher API Server ---
+  cipher:
     build: .
-    container_name: orchid-api
+    container_name: cipher-api
     ports:
       - "8000:8000"
     env_file:
       - .env
     volumes:
-      - orchid-data:/app/data          # Persist SQLite + ChromaDB
+      - cipher-data:/app/data          # Persist SQLite + ChromaDB
       - ./dashboard:/app/dashboard      # Dashboard hot-reload
     depends_on:
       - redis
@@ -27,7 +27,7 @@ services:
   # --- Redis (for Celery task queue) ---
   redis:
     image: redis:7-alpine
-    container_name: orchid-redis
+    container_name: cipher-redis
     ports:
       - "6379:6379"
     volumes:
@@ -42,19 +42,19 @@ services:
   # --- Celery Worker (background tasks) ---
   worker:
     build: .
-    container_name: orchid-worker
+    container_name: cipher-worker
     command: celery -A app.services.tasks worker --loglevel=info
     env_file:
       - .env
     volumes:
-      - orchid-data:/app/data
+      - cipher-data:/app/data
     depends_on:
       - redis
-      - orchid
+      - cipher
     restart: unless-stopped
 
 volumes:
-  orchid-data:
+  cipher-data:
     driver: local
   redis-data:
     driver: local

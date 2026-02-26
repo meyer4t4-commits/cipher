@@ -1,5 +1,5 @@
 """
-Pydantic schemas for Orchid API requests and responses.
+Pydantic schemas for Cipher API requests and responses.
 """
 
 from datetime import datetime

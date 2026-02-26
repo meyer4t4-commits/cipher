@@ -21,7 +21,7 @@ class ScannerConfig:
             ],
             "brand": [
                 "Elysian Protocol",
-                "Orchid",
+                "Cipher",
                 "Cipher",
             ],
             "industry": [

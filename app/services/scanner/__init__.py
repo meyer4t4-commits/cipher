@@ -1,1 +1,1 @@
-"""Scanner service for Orchid intelligence gathering."""
+"""Scanner service for Cipher intelligence gathering."""

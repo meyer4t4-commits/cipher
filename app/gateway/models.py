@@ -51,7 +51,7 @@ class KeyStatus(str, Enum):
 class ElysianAccount(Base):
     """
     An Elysian Protocol account — the billing and subscription entity.
-    One account can have multiple API keys and multiple Orchid users.
+    One account can have multiple API keys and multiple Cipher users.
     """
     __tablename__ = "elysian_accounts"
 

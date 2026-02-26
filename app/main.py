@@ -1,5 +1,5 @@
 """
-Orchid - Sovereign AI Intelligence Daemon
+Cipher - Sovereign AI Intelligence Daemon
 Main FastAPI application entry point.
 
 Built by Elysian Protocol.
@@ -26,7 +26,7 @@ from app.services.voice_service import close_voice_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting Orchid v{__version__} [{settings.app_env}]")
+    logger.info(f"Starting Cipher v{__version__} [{settings.app_env}]")
     logger.info(f"Default model: {settings.default_model}")
     os.environ['ANTHROPIC_API_KEY'] = settings.anthropic_api_key
     os.environ['GROQ_API_KEY'] = settings.groq_api_key
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
         logger.info("Intelligence scanner started")
 
     yield
-    logger.info("Orchid shutting down")
+    logger.info("Cipher shutting down")
 
     # Stop scanner on shutdown
     await stop_scanner()
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Orchid",
+    title="Cipher",
     description="Sovereign AI Intelligence Daemon by Elysian Protocol",
     version=__version__,
     lifespan=lifespan,
@@ -101,7 +101,7 @@ app.include_router(availability_router, prefix="/api/v1")
 @app.get("/")
 async def root():
     return {
-        "name": "Orchid",
+        "name": "Cipher",
         "version": __version__,
         "status": "operational",
         "by": "Elysian Protocol",

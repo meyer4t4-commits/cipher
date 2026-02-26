@@ -46,7 +46,7 @@ class GitHubScanner(BaseScanner):
                 timeout=10.0,
                 headers={
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Orchid Scanner",
+                    "User-Agent": "Cipher Scanner",
                 },
             )
         return self.client

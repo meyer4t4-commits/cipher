@@ -1,5 +1,5 @@
 """
-Voice Service - ElevenLabs TTS integration for Orchid.
+Voice Service - ElevenLabs TTS integration for Cipher.
 Handles voice synthesis, voice cloning, and voice management.
 
 This service integrates with ElevenLabs API v1 for high-quality text-to-speech

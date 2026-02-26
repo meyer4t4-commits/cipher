@@ -105,7 +105,7 @@ class FeatureProposal:
     source: str  # e.g., "Claude", "ChatGPT", "Gemini"
     feature_name: str
     description: str
-    relevance_score: float  # 0-1, based on alignment with Orchid
+    relevance_score: float  # 0-1, based on alignment with Cipher
     implementation_difficulty: ImplementationDifficulty
     affected_components: list[str]  # e.g., ["llm_router", "voice", "memory"]
     competitive_urgency: CompetitiveUrgency
@@ -232,7 +232,7 @@ class EvolutionScanner(BaseScanner):
         "open source", "open-source", "released", "unveiled", "debut",
     ]
 
-    # Component mapping to Orchid systems
+    # Component mapping to Cipher systems
     COMPONENT_KEYWORDS = {
         "llm_router": ["model", "routing", "provider", "integration", "inference", "api", "endpoint"],
         "voice": ["voice", "audio", "speech", "tts", "text-to-speech", "talking", "vocal", "speak", "whisper"],
@@ -833,7 +833,7 @@ class EvolutionScanner(BaseScanner):
         return title[:100]
 
     def _map_components(self, description: str) -> list[str]:
-        """Map content to affected Orchid components."""
+        """Map content to affected Cipher components."""
         components = []
         description_lower = description.lower()
 

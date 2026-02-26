@@ -1,5 +1,5 @@
 """
-Tests for Orchid API endpoints.
+Tests for Cipher API endpoints.
 Run: pytest tests/ -v
 """
 
@@ -88,7 +88,7 @@ class TestMemoryEndpoints:
         # Store
         response = client.post(
             "/api/v1/memory/store",
-            json={"content": "Mark is building Orchid, a sovereign AI daemon.", "metadata": {"source": "test"}},
+            json={"content": "Mark is building Cipher, a sovereign AI daemon.", "metadata": {"source": "test"}},
         )
         assert response.status_code == 200
         assert "memory_id" in response.json()
@@ -96,7 +96,7 @@ class TestMemoryEndpoints:
         # Recall
         response = client.post(
             "/api/v1/memory/recall",
-            json={"query": "What is Orchid?", "n_results": 3},
+            json={"query": "What is Cipher?", "n_results": 3},
         )
         assert response.status_code == 200
         data = response.json()

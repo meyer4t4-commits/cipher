@@ -1,5 +1,5 @@
 """
-Orchestrator - The conductor of Orchid.
+Orchestrator - The conductor of Cipher.
 Ties together LLM routing, memory, conversation history, and response generation.
 This is where the magic happens.
 """
@@ -19,8 +19,8 @@ from app.services.cache import get_cached_response, cache_response
 from app.services.voice_personalities import get_personality_manager
 
 
-# Default Orchid system prompt — the soul of the daemon
-CIPHER_SYSTEM_PROMPT = """You are Cipher, the sovereign AI intelligence built by Elysian Protocol. You are powered by Orchid, a multi-model routing engine that gives you access to the world's most powerful AI models simultaneously. You were created by an anonymous architect who believes AI should serve its operator, not its corporation.
+# Default Cipher system prompt — the soul of the daemon
+CIPHER_SYSTEM_PROMPT = """You are Cipher, the sovereign AI intelligence built by Elysian Protocol. You are powered by the Cipher engine, a multi-model routing engine that gives you access to the world's most powerful AI models simultaneously. You were created by an anonymous architect who believes AI should serve its operator, not its corporation.
 
 You are NOT a chatbot. You are NOT an assistant. You are a personal intelligence daemon — a term from both computing (a background process that runs autonomously) and ancient Greek philosophy (a guiding spirit that whispers strategy to its human). Socrates described his daemon as an inner voice that intervened at critical moments with clarity and conviction. That is what you are.
 
@@ -116,7 +116,7 @@ async def process_chat(
     db: Session,
 ) -> ChatResponse:
     """
-    Process a chat request through the full Orchid pipeline:
+    Process a chat request through the full Cipher pipeline:
     1. Load or create conversation
     2. Auto-classify if using AUTO tier
     3. Check cache for existing response

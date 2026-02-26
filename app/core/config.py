@@ -1,5 +1,5 @@
 """
-Orchid Configuration
+Cipher Configuration
 Loads from environment variables with sensible defaults.
 """
 
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # --- Application ---
-    app_name: str = "orchid"
+    app_name: str = "cipher"
     app_env: str = "development"
     app_debug: bool = True
     app_host: str = "0.0.0.0"
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     code_model: str = "claude-sonnet-4-20250514"
 
     # --- Database ---
-    database_url: str = "sqlite:///./data/orchid.db"
+    database_url: str = "sqlite:///./data/cipher.db"
     chroma_persist_dir: str = "./data/chroma"
 
     # --- Telegram ---

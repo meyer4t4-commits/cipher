@@ -1,5 +1,5 @@
 """
-Memory Service - Orchid's persistent context layer.
+Memory Service - Cipher's persistent context layer.
 Uses a local JSON-backed store for memory persistence.
 
 Phase 1: Simple keyword-matching memory (Python 3.14 compatible).
@@ -16,7 +16,7 @@ from app.core.logging import logger
 
 memory_dir = Path(settings.chroma_persist_dir)
 memory_dir.mkdir(parents=True, exist_ok=True)
-MEMORY_FILE = memory_dir / "orchid_memory.json"
+MEMORY_FILE = memory_dir / "cipher_memory.json"
 
 
 def _load_store() -> dict:
@@ -47,7 +47,7 @@ def _relevance_score(query: str, document: str) -> float:
     return (overlap * 0.6) + (seq_score * 0.4)
 
 
-def get_collection(name: str = "orchid_memory") -> str:
+def get_collection(name: str = "cipher_memory") -> str:
     store = _load_store()
     if name not in store:
         store[name] = {"entries": []}
@@ -55,7 +55,7 @@ def get_collection(name: str = "orchid_memory") -> str:
     return name
 
 
-def store_memory(content: str, metadata: dict | None = None, collection_name: str = "orchid_memory", memory_id: str | None = None) -> str:
+def store_memory(content: str, metadata: dict | None = None, collection_name: str = "cipher_memory", memory_id: str | None = None) -> str:
     store = _load_store()
     mem_id = memory_id or str(uuid.uuid4())
     meta = metadata or {}
@@ -68,7 +68,7 @@ def store_memory(content: str, metadata: dict | None = None, collection_name: st
     return mem_id
 
 
-def recall_memories(query: str, n_results: int = 5, collection_name: str = "orchid_memory", where: dict | None = None) -> list[dict]:
+def recall_memories(query: str, n_results: int = 5, collection_name: str = "cipher_memory", where: dict | None = None) -> list[dict]:
     store = _load_store()
     if collection_name not in store:
         return []
@@ -92,13 +92,13 @@ def store_conversation_context(conversation_id: str, user_message: str, assistan
     return store_memory(content=content, metadata={"source": "conversation", "conversation_id": conversation_id, "type": "exchange"})
 
 
-def get_memory_stats(collection_name: str = "orchid_memory") -> dict:
+def get_memory_stats(collection_name: str = "cipher_memory") -> dict:
     store = _load_store()
     entries = store.get(collection_name, {}).get("entries", [])
     return {"collection": collection_name, "total_memories": len(entries)}
 
 
-def delete_memory(memory_id: str, collection_name: str = "orchid_memory") -> bool:
+def delete_memory(memory_id: str, collection_name: str = "cipher_memory") -> bool:
     try:
         store = _load_store()
         if collection_name not in store:

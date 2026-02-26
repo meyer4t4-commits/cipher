@@ -1,7 +1,7 @@
 # Fly.io deployment configuration
 # Deploy: fly launch && fly deploy
 
-app = "orchid-elysian"
+app = "cipher-elysian"
 primary_region = "ewr"  # Newark, NJ (closest to Philly)
 
 [build]
@@ -25,5 +25,5 @@ primary_region = "ewr"  # Newark, NJ (closest to Philly)
   memory_mb = 512
 
 [mounts]
-  source = "orchid_data"
+  source = "cipher_data"
   destination = "/app/data"

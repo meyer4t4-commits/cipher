@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for Orchid.
+SQLAlchemy ORM models for Cipher.
 These define the database schema.
 """
 

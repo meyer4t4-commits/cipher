@@ -157,7 +157,7 @@ class ScannerOrchestrator:
 
     async def _store_results(self, results: list[ScanResult]) -> None:
         """
-        Store scan results in Orchid's memory.
+        Store scan results in Cipher's memory.
 
         Args:
             results: Scan results to store

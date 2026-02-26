@@ -1,6 +1,6 @@
 """
-Telegram Bot - Orchid's messaging interface.
-Zig's spiritual successor. Talk to Orchid from anywhere via Telegram.
+Telegram Bot - Cipher's messaging interface.
+Zig's spiritual successor. Talk to Cipher from anywhere via Telegram.
 
 This bot runs alongside the FastAPI server and provides the same
 intelligence through Telegram's messaging platform.
@@ -20,7 +20,7 @@ from telegram.ext import (
 from app.core.config import settings
 from app.core.logging import logger
 
-# Orchid API base URL (talks to the local FastAPI server)
+# Cipher API base URL (talks to the local FastAPI server)
 API_BASE = f"http://localhost:{settings.app_port}/api/v1"
 
 # Track conversation IDs per Telegram user
@@ -28,7 +28,7 @@ user_conversations: dict[int, str] = {}
 
 
 def is_authorized(user_id: int) -> bool:
-    """Check if a Telegram user is authorized to use Orchid."""
+    """Check if a Telegram user is authorized to use Cipher."""
     allowed = settings.allowed_telegram_users
     return not allowed or user_id in allowed
 
@@ -36,11 +36,11 @@ def is_authorized(user_id: int) -> bool:
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("Unauthorized. Orchid is sovereign.")
+        await update.message.reply_text("Unauthorized. Cipher is sovereign.")
         return
 
     await update.message.reply_text(
-        "Orchid is online.\n\n"
+        "Cipher is online.\n\n"
         "Commands:\n"
         "/new - Start a new conversation\n"
         "/memory <query> - Search your memories\n"

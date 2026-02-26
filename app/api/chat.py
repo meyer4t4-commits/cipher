@@ -1,5 +1,5 @@
 """
-Chat API endpoints - the primary interface to Orchid.
+Chat API endpoints - the primary interface to Cipher.
 
 Supports both free (local) and premium (Elysian Gateway) modes:
 - Without API key: uses user's own LLM API keys (free tier)
@@ -39,7 +39,7 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     """
-    Send a message to Orchid and receive an intelligent response.
+    Send a message to Cipher and receive an intelligent response.
     The orchestrator handles memory retrieval, model routing, and context management.
 
     Works in both free (no API key) and premium (Elysian API key) modes.
@@ -74,7 +74,7 @@ async def send_message(
 @router.post("/stream")
 async def stream_message(request: ChatRequest, db: Session = Depends(get_db)):
     """
-    Stream a response from Orchid token by token.
+    Stream a response from Cipher token by token.
     Uses Server-Sent Events (SSE) for real-time streaming.
     """
     # Build messages from conversation history
