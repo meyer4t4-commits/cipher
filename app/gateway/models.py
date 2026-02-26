@@ -70,7 +70,7 @@ class ElysianAccount(Base):
     monthly_token_limit = Column(Integer, default=100_000)  # Free tier default
     monthly_request_limit = Column(Integer, default=1_000)
     daily_scanner_scans = Column(Integer, default=0)  # 0 = disabled for free
-    voice_minutes_limit = Column(Integer, default=0)  # 0 = disabled for free
+    voice_minutes_limit = Column(Integer, default=15)  # Free gets 15 min of Cipher's voice
 
     # Status
     is_active = Column(Boolean, default=True)
@@ -214,124 +214,138 @@ class RateLimitEntry(Base):
 TIER_LIMITS = {
     # ─────────────────────────────────────────────────────────────────────
     # FREE ($0) — The Hook
-    # Goal: Let them taste Cipher. Give enough to create the habit.
-    # Ceiling: They hit token limits fast. No voice. No scanner.
-    # They FEEL what they're missing because the app teases premium
-    # features in the UI ("Upgrade to hear Cipher speak").
-    # Conversion trigger: "I want voice" or "I need more messages"
+    # Voice IS the product. Free users get Cipher's voice from day one.
+    # That's how they fall in love. The ceiling is: Cipher is the ONLY
+    # voice. When they're frustrated and Cipher can't shift to rally
+    # mode, when they need comfort and there's no anchor voice —
+    # THAT's when they feel it. Also: limited voice minutes, no scanner,
+    # slower models.
+    # Conversion trigger: "I wish Cipher had a different voice for this"
     # ─────────────────────────────────────────────────────────────────────
     SubscriptionTier.FREE: {
         "monthly_tokens": 100_000,       # ~50 solid conversations, then wall
         "monthly_requests": 500,          # Hard limit they'll feel in week 2
         "daily_scans": 0,
-        "voice_minutes": 0,              # Voice is the #1 upgrade driver
-        "cascade_routing": False,         # Single model only — they feel the slowness
-        "voice_personalities": False,
+        "voice_minutes": 15,             # Cipher's voice included — 15 min/mo
+        "cipher_voice": True,            # Cipher's core voice is ALWAYS included
+        "situational_voices": 0,         # No voice switching — Cipher only
+        "cascade_routing": False,         # Single model only
         "evolution_scanner": False,
-        "emotion_detection": False,
+        "emotion_detection": False,       # Can't read the room yet
         "voice_cloning": False,
-        "education_voices": False,
-        "priority_models": False,         # No access to strongest models
-        "custom_system_prompts": True,    # Let them customize — builds investment
-        "conversation_export": False,     # Can't export — lock-in
+        "education_voices": 0,
+        "priority_models": False,
+        "custom_system_prompts": True,    # Builds investment
+        "conversation_export": False,
+        "voice_opt_out": True,            # Can turn off voice if they just want text
         "max_api_keys": 1,
-        "max_conversations": 50,          # Archive older ones
+        "max_conversations": 50,
         "price_monthly_usd": 0,
-        "upgrade_hook": "Unlock Cipher's voice, faster models, and unlimited conversations",
+        "upgrade_hook": "Unlock situational voices — Cipher adapts HOW it speaks to what you need",
     },
 
     # ─────────────────────────────────────────────────────────────────────
-    # PRO ($29/mo) — The Magic
-    # Goal: This is where they fall in love. Voice + scanner + speed.
-    # Ceiling: Voice minutes are tight (60 min). Scanner is daily-only.
-    # 3 personalities only. They discover education voices exist but
-    # can't use them. They want more voice time, more scans.
-    # Conversion trigger: "I need more voice" or "I want the education
-    # platform" or "Can I get real-time scans?"
+    # PRO ($29/mo) — The Shift
+    # Now Cipher adapts. When they're down, Anchor mode kicks in.
+    # When they need fire, Motivator shows up. When they need to
+    # think, Philosopher arrives. This is the "holy shit it reads me"
+    # moment. But: only 4 situational voices (the core emotional ones).
+    # They hear about Strategist, Coach, Educator, Creative but those
+    # are locked. Also emotion detection turns on — Cipher picks up
+    # on vocal cues. Scanner starts. More voice time.
+    # Conversion trigger: "I want the strategy voice" or "can Cipher
+    # teach me things?" or "I need all the voices"
     # ─────────────────────────────────────────────────────────────────────
     SubscriptionTier.PRO: {
-        "monthly_tokens": 2_000_000,      # 10x free — generous but not unlimited
+        "monthly_tokens": 2_000_000,
         "monthly_requests": 10_000,
-        "daily_scans": 1,                 # Once per day — they'll want more
-        "voice_minutes": 60,              # 1 hour/month — they'll burn through this
-        "cascade_routing": True,           # FrugalGPT — they feel the speed jump
-        "voice_personalities": 3,          # Cipher Core + Motivator + Anchor ONLY
-        "evolution_scanner": True,         # Daily scans, but no real-time
-        "emotion_detection": True,         # They experience the magic
-        "voice_cloning": False,            # Teased: "Clone your voice on Business"
-        "education_voices": False,         # Teased: "Education platform on Business"
-        "priority_models": True,           # Access to Claude/GPT-4 class
-        "custom_system_prompts": True,
-        "conversation_export": True,
-        "max_api_keys": 2,
-        "max_conversations": 500,
-        "price_monthly_usd": 29,
-        "upgrade_hook": "Unlock all 8 voice personalities, education voices, and 5x more voice time",
-    },
-
-    # ─────────────────────────────────────────────────────────────────────
-    # BUSINESS ($79/mo) — The Builder
-    # Goal: They're building on Cipher now. Education platform. Team use.
-    # Full voice stack. All personalities. This is where creators and
-    # educators live.
-    # Ceiling: No voice cloning. No white-label. No dedicated instances.
-    # Scanner is 3x/day not real-time. Voice is 5 hours not unlimited.
-    # Conversion trigger: "I want to clone voices" or "I need this for
-    # my company" or "Can I white-label this?"
-    # ─────────────────────────────────────────────────────────────────────
-    SubscriptionTier.BUSINESS: {
-        "monthly_tokens": 10_000_000,     # 5x Pro — serious usage
-        "monthly_requests": 50_000,
-        "daily_scans": 3,                 # 3x/day — morning, noon, evening
-        "voice_minutes": 300,             # 5 hours/month — real usage
+        "daily_scans": 1,
+        "voice_minutes": 90,             # 1.5 hours — they'll feel it
+        "cipher_voice": True,
+        "situational_voices": 4,          # Cipher + Motivator + Anchor + Philosopher + Creative
         "cascade_routing": True,
-        "voice_personalities": 8,          # ALL 8 personalities unlocked
         "evolution_scanner": True,
-        "emotion_detection": True,
-        "voice_cloning": False,            # Still teased: "Enterprise for cloning"
-        "education_voices": True,          # FULL education voice stack (10 voices)
+        "emotion_detection": True,        # Cipher reads vocal cues now
+        "voice_cloning": False,
+        "education_voices": 0,            # Teased: "Learn Italian with a Nonna voice"
         "priority_models": True,
         "custom_system_prompts": True,
         "conversation_export": True,
-        "weekly_briefings": True,          # Markdown + JSON weekly recaps
-        "api_webhooks": True,              # Webhook notifications for scans
+        "voice_opt_out": True,
+        "max_api_keys": 2,
+        "max_conversations": 500,
+        "price_monthly_usd": 29,
+        "upgrade_hook": "All 7 situational voices, education voices, and 5 hours of voice time",
+    },
+
+    # ─────────────────────────────────────────────────────────────────────
+    # BUSINESS ($79/mo) — The Full Voice
+    # Every voice unlocked. Every situation covered. Plus the education
+    # voice stack — Nonna for Italian, Alan Watts for philosophy,
+    # Einstein for science, Blues master for harmonica. This is where
+    # creators, educators, and power users live.
+    # Education platform voices are the big draw here. Someone who
+    # wants to learn Italian with a warm Nonna character, or physics
+    # with an Einstein-like voice, or guitar — they need this tier.
+    # Ceiling: No voice cloning. No white-label.
+    # Conversion trigger: "I want to clone my voice" or "white-label"
+    # ─────────────────────────────────────────────────────────────────────
+    SubscriptionTier.BUSINESS: {
+        "monthly_tokens": 10_000_000,
+        "monthly_requests": 50_000,
+        "daily_scans": 3,
+        "voice_minutes": 300,             # 5 hours/month
+        "cipher_voice": True,
+        "situational_voices": -1,          # ALL 7 situational voices
+        "cascade_routing": True,
+        "evolution_scanner": True,
+        "emotion_detection": True,
+        "voice_cloning": False,
+        "education_voices": -1,            # ALL education voices (ever-growing catalog)
+        "priority_models": True,
+        "custom_system_prompts": True,
+        "conversation_export": True,
+        "voice_opt_out": True,
+        "weekly_briefings": True,
+        "api_webhooks": True,
         "max_api_keys": 10,
-        "max_conversations": -1,           # Unlimited
+        "max_conversations": -1,
         "price_monthly_usd": 79,
-        "upgrade_hook": "Clone your own voice, unlimited everything, SLA guarantees, white-label",
+        "upgrade_hook": "Clone your own voice, unlimited everything, white-label",
     },
 
     # ─────────────────────────────────────────────────────────────────────
     # ENTERPRISE ($199/mo) — The Empire
-    # Goal: They can't operate without Cipher. Their business runs on it.
-    # Voice cloning. Unlimited everything. White-label. SLA.
-    # This is the "my company IS Cipher" tier.
-    # No ceiling — this is the top. Upsell is annual contracts and
-    # custom enterprise deals ($499+/mo with dedicated infra).
+    # Voice cloning. White-label. SLA. Their operation IS Cipher.
+    # They can clone their own voice for voiceovers, content, courses.
+    # Design entirely new synthetic voices. Remove Elysian branding.
+    # This is the "I built my business on this" tier.
     # ─────────────────────────────────────────────────────────────────────
     SubscriptionTier.ENTERPRISE: {
-        "monthly_tokens": 50_000_000,     # Effectively unlimited for most
+        "monthly_tokens": 50_000_000,
         "monthly_requests": 500_000,
-        "daily_scans": 10,                # Near real-time monitoring
+        "daily_scans": 10,
         "voice_minutes": 1200,            # 20 hours/month
+        "cipher_voice": True,
+        "situational_voices": -1,
         "cascade_routing": True,
-        "voice_personalities": -1,         # Unlimited + custom personalities
         "evolution_scanner": True,
         "emotion_detection": True,
-        "voice_cloning": True,             # THE key unlock — create your own voices
-        "education_voices": True,
+        "voice_cloning": True,             # Clone your own voice
+        "education_voices": -1,
         "priority_models": True,
         "custom_system_prompts": True,
         "conversation_export": True,
+        "voice_opt_out": True,
         "weekly_briefings": True,
         "api_webhooks": True,
-        "white_label": True,               # Remove Elysian branding
+        "white_label": True,
         "dedicated_support": True,
-        "sla_guarantee": True,             # 99.9% uptime
-        "custom_voice_design": True,       # Design entirely new voices
+        "sla_guarantee": True,
+        "custom_voice_design": True,       # Design new synthetic voices
         "max_api_keys": 50,
         "max_conversations": -1,
         "price_monthly_usd": 199,
-        "upgrade_hook": None,              # Top tier — upsell is annual/custom
+        "upgrade_hook": None,
     },
 }
