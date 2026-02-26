@@ -21,6 +21,7 @@ class ModelTier(str, Enum):
     LOCAL = "local"
     CODE = "code"
     DEFAULT = "default"
+    AUTO = "auto"
 
 
 class TaskStatus(str, Enum):
@@ -41,7 +42,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
-    model_tier: ModelTier = ModelTier.DEFAULT
+    model_tier: ModelTier = ModelTier.AUTO
     system_prompt: str | None = None
     include_memory: bool = True
     max_tokens: int = 4096

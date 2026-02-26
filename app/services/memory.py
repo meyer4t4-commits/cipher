@@ -1,137 +1,111 @@
 """
 Memory Service - Orchid's persistent context layer.
-Uses ChromaDB for vector storage and semantic retrieval.
+Uses a local JSON-backed store for memory persistence.
 
-This is what makes Orchid sovereign: your memories stay local,
-searchable, and never leave your machine.
+Phase 1: Simple keyword-matching memory (Python 3.14 compatible).
+Phase 2: Will upgrade to ChromaDB when Python 3.14 support lands.
 """
 
+import json
+import uuid
 from pathlib import Path
-
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+from difflib import SequenceMatcher
 
 from app.core.config import settings
 from app.core.logging import logger
 
-# Ensure ChromaDB directory exists
-chroma_path = Path(settings.chroma_persist_dir)
-chroma_path.mkdir(parents=True, exist_ok=True)
-
-# Initialize ChromaDB client with persistent storage
-chroma_client = chromadb.PersistentClient(
-    path=str(chroma_path),
-    settings=ChromaSettings(anonymized_telemetry=False),
-)
+memory_dir = Path(settings.chroma_persist_dir)
+memory_dir.mkdir(parents=True, exist_ok=True)
+MEMORY_FILE = memory_dir / "orchid_memory.json"
 
 
-def get_collection(name: str = "orchid_memory") -> chromadb.Collection:
-    """Get or create a ChromaDB collection."""
-    return chroma_client.get_or_create_collection(
-        name=name,
-        metadata={"hnsw:space": "cosine"},  # cosine similarity for text
-    )
+def _load_store() -> dict:
+    if MEMORY_FILE.exists():
+        try:
+            return json.loads(MEMORY_FILE.read_text())
+        except Exception as e:
+            logger.warning(f"Failed to load memory store: {e}")
+    return {}
 
 
-def store_memory(
-    content: str,
-    metadata: dict | None = None,
-    collection_name: str = "orchid_memory",
-    memory_id: str | None = None,
-) -> str:
-    """
-    Store a piece of information in long-term memory.
-    Returns the memory ID.
-    """
-    import uuid
+def _save_store(store: dict) -> None:
+    try:
+        MEMORY_FILE.write_text(json.dumps(store, indent=2, default=str))
+    except Exception as e:
+        logger.error(f"Failed to save memory store: {e}")
 
-    collection = get_collection(collection_name)
+
+def _relevance_score(query: str, document: str) -> float:
+    query_lower = query.lower()
+    doc_lower = document.lower()
+    query_words = set(query_lower.split())
+    doc_words = set(doc_lower.split())
+    if not query_words:
+        return 0.0
+    overlap = len(query_words & doc_words) / len(query_words)
+    seq_score = SequenceMatcher(None, query_lower[:200], doc_lower[:200]).ratio()
+    return (overlap * 0.6) + (seq_score * 0.4)
+
+
+def get_collection(name: str = "orchid_memory") -> str:
+    store = _load_store()
+    if name not in store:
+        store[name] = {"entries": []}
+        _save_store(store)
+    return name
+
+
+def store_memory(content: str, metadata: dict | None = None, collection_name: str = "orchid_memory", memory_id: str | None = None) -> str:
+    store = _load_store()
     mem_id = memory_id or str(uuid.uuid4())
     meta = metadata or {}
     meta["source"] = meta.get("source", "conversation")
-
-    collection.add(
-        documents=[content],
-        metadatas=[meta],
-        ids=[mem_id],
-    )
-
+    if collection_name not in store:
+        store[collection_name] = {"entries": []}
+    store[collection_name]["entries"].append({"id": mem_id, "content": content, "metadata": meta})
+    _save_store(store)
     logger.debug(f"Stored memory {mem_id[:8]}... in {collection_name}")
     return mem_id
 
 
-def recall_memories(
-    query: str,
-    n_results: int = 5,
-    collection_name: str = "orchid_memory",
-    where: dict | None = None,
-) -> list[dict]:
-    """
-    Recall relevant memories based on semantic similarity.
-    Returns a list of memories with content, metadata, and relevance scores.
-    """
-    collection = get_collection(collection_name)
-
-    if collection.count() == 0:
+def recall_memories(query: str, n_results: int = 5, collection_name: str = "orchid_memory", where: dict | None = None) -> list[dict]:
+    store = _load_store()
+    if collection_name not in store:
         return []
-
-    kwargs = {
-        "query_texts": [query],
-        "n_results": min(n_results, collection.count()),
-    }
+    entries = store[collection_name].get("entries", [])
+    if not entries:
+        return []
     if where:
-        kwargs["where"] = where
-
-    results = collection.query(**kwargs)
-
-    memories = []
-    for i, doc in enumerate(results["documents"][0]):
-        memories.append({
-            "id": results["ids"][0][i],
-            "content": doc,
-            "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-            "distance": results["distances"][0][i] if results["distances"] else 0.0,
-            "relevance": 1.0 - (results["distances"][0][i] if results["distances"] else 0.0),
-        })
-
+        entries = [e for e in entries if all(e.get("metadata", {}).get(k) == v for k, v in where.items())]
+    scored = []
+    for entry in entries:
+        score = _relevance_score(query, entry["content"])
+        scored.append({"id": entry["id"], "content": entry["content"], "metadata": entry.get("metadata", {}), "distance": 1.0 - score, "relevance": score})
+    scored.sort(key=lambda x: x["relevance"], reverse=True)
+    memories = scored[:n_results]
     logger.debug(f"Recalled {len(memories)} memories for query: {query[:50]}...")
     return memories
 
 
-def store_conversation_context(
-    conversation_id: str,
-    user_message: str,
-    assistant_response: str,
-) -> str:
-    """
-    Store a conversation exchange as a memory.
-    This enables Orchid to recall past conversations contextually.
-    """
+def store_conversation_context(conversation_id: str, user_message: str, assistant_response: str) -> str:
     content = f"User: {user_message}\nAssistant: {assistant_response}"
-    return store_memory(
-        content=content,
-        metadata={
-            "source": "conversation",
-            "conversation_id": conversation_id,
-            "type": "exchange",
-        },
-    )
+    return store_memory(content=content, metadata={"source": "conversation", "conversation_id": conversation_id, "type": "exchange"})
 
 
 def get_memory_stats(collection_name: str = "orchid_memory") -> dict:
-    """Get statistics about stored memories."""
-    collection = get_collection(collection_name)
-    return {
-        "collection": collection_name,
-        "total_memories": collection.count(),
-    }
+    store = _load_store()
+    entries = store.get(collection_name, {}).get("entries", [])
+    return {"collection": collection_name, "total_memories": len(entries)}
 
 
 def delete_memory(memory_id: str, collection_name: str = "orchid_memory") -> bool:
-    """Delete a specific memory by ID."""
     try:
-        collection = get_collection(collection_name)
-        collection.delete(ids=[memory_id])
+        store = _load_store()
+        if collection_name not in store:
+            return False
+        entries = store[collection_name].get("entries", [])
+        store[collection_name]["entries"] = [e for e in entries if e["id"] != memory_id]
+        _save_store(store)
         return True
     except Exception as e:
         logger.error(f"Failed to delete memory {memory_id}: {e}")

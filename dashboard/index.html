@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orchid - Elysian Protocol</title>
+    <title>Cipher - Elysian Protocol</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        orchid: {
+                        cipher: {
                             50: '#f0f4ff',
                             100: '#dbe4ff',
                             200: '#bac8ff',
@@ -26,28 +27,217 @@
                             800: '#3b5bdb',
                             900: '#364fc7',
                             950: '#1b3a5c',
-                        }
+                        },
+                        surface: '#141925',
+                        bg: '#0A0E1A',
+                        accent: '#4C6EF5',
                     }
                 }
             }
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        code, pre { font-family: 'JetBrains Mono', monospace; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0A0E1A;
+            color: #ffffff;
+        }
+
+        code, pre {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .pulse-dot {
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .cipher-logo {
+            background: linear-gradient(135deg, #4C6EF5 0%, #5c7cfa 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cipher-logo::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+        }
+
+        /* Markdown styling */
+        .markdown-content strong {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+            font-weight: 600;
+            color: #ffffff;
+            margin-top: 0.5em;
+            margin-bottom: 0.3em;
+        }
+
+        .markdown-content h1 {
+            font-size: 1.25em;
+        }
+
+        .markdown-content h2 {
+            font-size: 1.1em;
+        }
+
+        .markdown-content h3 {
+            font-size: 1em;
+        }
+
+        .markdown-content code {
+            background: rgba(76, 110, 245, 0.1);
+            color: #4C6EF5;
+            padding: 0.2em 0.4em;
+            border-radius: 0.3em;
+            font-size: 0.9em;
+        }
+
+        .markdown-content pre {
+            background: #0A0E1A;
+            border: 1px solid rgba(76, 110, 245, 0.2);
+            border-radius: 0.5em;
+            padding: 1em;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+
+        .markdown-content pre code {
+            background: none;
+            color: #8B95A5;
+            padding: 0;
+        }
+
+        .markdown-content ul {
+            list-style: none;
+            padding-left: 1.5em;
+        }
+
+        .markdown-content ul li {
+            margin: 0.25em 0;
+        }
+
+        .markdown-content ul li::before {
+            content: '• ';
+            color: #4C6EF5;
+            font-weight: bold;
+            margin-left: -1em;
+            padding-right: 0.5em;
+        }
+
+        .markdown-content ol {
+            padding-left: 1.5em;
+        }
+
+        .markdown-content ol li {
+            margin: 0.25em 0;
+        }
+
+        /* Smooth transitions */
+        .transition-smooth {
+            transition: all 0.3s ease;
+        }
+
+        .group-hover\:bg-surface\/50:hover {
+            background-color: rgba(20, 25, 37, 0.5);
+        }
+
+        /* Textarea auto-expand */
+        textarea {
+            resize: none;
+            transition: height 0.2s ease;
+        }
+
+        /* Connection status animation */
+        @keyframes pulse-ring {
+            0% {
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 6px rgba(74, 222, 128, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+            }
+        }
+
+        .status-connected {
+            animation: pulse-ring 2s infinite;
+        }
     </style>
 </head>
-<body class="bg-gray-950 text-gray-100">
+<body style="background: #0A0E1A;">
     <div id="root"></div>
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
         const API = 'http://localhost:8000/api/v1';
+
+        // ==================== Markdown Renderer ====================
+        function renderMarkdown(content) {
+            if (!content) return '';
+
+            let html = content
+                // Headers
+                .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
+                // Bold
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Code blocks
+                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                // Inline code
+                .replace(/`(.*?)`/g, '<code>$1</code>')
+                // Bullet lists - match lines starting with - or *
+                .replace(/^\s*[-*] (.*?)$/gm, '<li>$1</li>')
+                // Wrap consecutive lis in ul
+                .replace(/(<li>.*?<\/li>)/gs, (match) => {
+                    if (!match.includes('<ul>')) {
+                        return '<ul>' + match + '</ul>';
+                    }
+                    return match;
+                });
+
+            return html;
+        }
 
         // ==================== API Helpers ====================
         async function api(path, options = {}) {
@@ -63,77 +253,155 @@
 
         function StatusDot({ connected }) {
             return (
-                <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-400 pulse-dot' : 'bg-red-400'}`} />
+                <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-400 status-connected' : 'bg-red-400'}`} />
             );
         }
 
-        function Sidebar({ conversations, activeId, onSelect, onNew }) {
+        function CipherLogo({ size = 'md' }) {
+            const sizeMap = {
+                sm: 'w-6 h-6 text-xs',
+                md: 'w-8 h-8 text-sm',
+                lg: 'w-12 h-12 text-xl',
+            };
+
             return (
-                <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col h-full">
-                    <div className="p-4 border-b border-gray-800">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-8 h-8 rounded-lg bg-orchid-700 flex items-center justify-center">
-                                <span className="text-white font-bold text-sm">O</span>
+                <div className={`${sizeMap[size]} rounded-lg cipher-logo flex items-center justify-center flex-shrink-0 relative`}>
+                    <span className="text-white font-bold relative z-10">C</span>
+                </div>
+            );
+        }
+
+        function Sidebar({ conversations, activeId, onSelect, onNew, isMobileOpen, onMobileClose }) {
+            const [showMobileMenu, setShowMobileMenu] = useState(isMobileOpen);
+
+            const sidebarClasses = `
+                fixed md:static
+                inset-y-0 left-0 z-50
+                w-72
+                bg-gradient-to-b from-[#141925] to-[#0F1319]
+                border-r border-gray-800
+                flex flex-col h-full
+                transition-transform duration-300
+                ${showMobileMenu ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+            `;
+
+            return (
+                <>
+                    {showMobileMenu && (
+                        <div
+                            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+                            onClick={() => setShowMobileMenu(false)}
+                        />
+                    )}
+                    <div className={sidebarClasses}>
+                        <div className="p-4 border-b border-gray-800">
+                            <div className="flex items-center gap-3 mb-4">
+                                <CipherLogo size="md" />
+                                <div>
+                                    <h1 className="text-sm font-bold text-white">Cipher</h1>
+                                    <p className="text-xs text-gray-500">by Elysian Protocol</p>
+                                </div>
                             </div>
-                            <div>
-                                <h1 className="text-sm font-semibold text-white">Orchid</h1>
-                                <p className="text-xs text-gray-500">Elysian Protocol</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={onNew}
-                            className="w-full py-2 px-3 rounded-lg bg-orchid-700 hover:bg-orchid-600 text-white text-sm font-medium transition-colors"
-                        >
-                            + New Conversation
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto scrollbar-hide p-2">
-                        {conversations.map(conv => (
                             <button
-                                key={conv.id}
-                                onClick={() => onSelect(conv.id)}
-                                className={`w-full text-left p-3 rounded-lg mb-1 transition-colors ${
-                                    activeId === conv.id
-                                        ? 'bg-gray-800 text-white'
-                                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'
-                                }`}
+                                onClick={() => {
+                                    onNew();
+                                    setShowMobileMenu(false);
+                                }}
+                                className="w-full py-2 px-3 rounded-lg bg-[#4C6EF5] hover:bg-[#5c7cfa] text-white text-sm font-semibold transition-colors duration-200"
                             >
-                                <div className="text-sm font-medium truncate">
-                                    {conv.title || 'New conversation'}
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                    {conv.message_count} messages
-                                </div>
+                                + New Chat
                             </button>
-                        ))}
+                        </div>
+                        <div className="flex-1 overflow-y-auto scrollbar-hide p-2">
+                            {conversations.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500 text-sm">
+                                    <p>No conversations yet</p>
+                                    <p className="text-xs mt-2">Start a new chat to begin</p>
+                                </div>
+                            ) : (
+                                conversations.map(conv => (
+                                    <button
+                                        key={conv.id}
+                                        onClick={() => {
+                                            onSelect(conv.id);
+                                            setShowMobileMenu(false);
+                                        }}
+                                        className={`w-full text-left p-3 rounded-lg mb-1 transition-colors duration-200 ${
+                                            activeId === conv.id
+                                                ? 'bg-[#4C6EF5]/20 text-white border border-[#4C6EF5]/30'
+                                                : 'text-gray-400 hover:bg-gray-800/30 hover:text-gray-200'
+                                        }`}
+                                    >
+                                        <div className="text-sm font-medium truncate">
+                                            {conv.title || 'Untitled conversation'}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            {conv.message_count || 0} messages
+                                        </div>
+                                    </button>
+                                ))
+                            )}
+                        </div>
                     </div>
-                </div>
+                </>
             );
         }
 
-        function ChatMessage({ message }) {
+        function ChatMessage({ message, showMetadata = false, model = 'Default', responseTime = null }) {
             const isUser = message.role === 'user';
+
             return (
-                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-                    <div className={`max-w-2xl px-4 py-3 rounded-2xl ${
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 message-enter`}>
+                    <div className={`max-w-2xl px-5 py-3 rounded-2xl ${
                         isUser
-                            ? 'bg-orchid-700 text-white'
-                            : 'bg-gray-800 text-gray-100'
+                            ? 'bg-[#4C6EF5] text-white rounded-br-none'
+                            : 'bg-[#141925] text-gray-100 rounded-bl-none border border-gray-800'
                     }`}>
-                        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                        <div className="text-sm markdown-content" dangerouslySetInnerHTML={{
+                            __html: isUser ? content : renderMarkdown(message.content)
+                        }} />
+                        {showMetadata && !isUser && (
+                            <div className="mt-2 pt-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+                                <span>{model}</span>
+                                {responseTime && <span>{responseTime}</span>}
+                            </div>
+                        )}
                     </div>
                 </div>
             );
+
+            // Fallback without dangerouslySetInnerHTML for user messages
+            if (isUser) {
+                const content = message.content;
+                return (
+                    <div className={`flex justify-end mb-4 message-enter`}>
+                        <div className="max-w-2xl px-5 py-3 rounded-2xl bg-[#4C6EF5] text-white rounded-br-none">
+                            <div className="text-sm whitespace-pre-wrap">{content}</div>
+                        </div>
+                    </div>
+                );
+            }
         }
 
-        function ChatInput({ onSend, disabled }) {
+        function ChatInput({ onSend, disabled, placeholder = "Message Cipher..." }) {
             const [text, setText] = useState('');
             const textareaRef = useRef(null);
+
+            useEffect(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.style.height = 'auto';
+                    const newHeight = Math.min(textareaRef.current.scrollHeight, 120);
+                    textareaRef.current.style.height = newHeight + 'px';
+                }
+            }, [text]);
 
             const handleSubmit = () => {
                 if (text.trim() && !disabled) {
                     onSend(text.trim());
                     setText('');
+                    if (textareaRef.current) {
+                        textareaRef.current.style.height = 'auto';
+                    }
                 }
             };
 
@@ -145,22 +413,23 @@
             };
 
             return (
-                <div className="border-t border-gray-800 p-4">
-                    <div className="max-w-3xl mx-auto flex gap-2">
+                <div className="border-t border-gray-800 bg-[#0A0E1A] p-4">
+                    <div className="max-w-4xl mx-auto flex gap-3">
                         <textarea
                             ref={textareaRef}
                             value={text}
                             onChange={(e) => setText(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder="Message Orchid..."
+                            placeholder={placeholder}
                             rows={1}
-                            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orchid-600 resize-none"
+                            className="flex-1 bg-[#141925] border border-gray-700 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#4C6EF5] focus:ring-1 focus:ring-[#4C6EF5]/30 resize-none transition-colors duration-200"
                             disabled={disabled}
+                            style={{ minHeight: '44px', maxHeight: '120px' }}
                         />
                         <button
                             onClick={handleSubmit}
                             disabled={disabled || !text.trim()}
-                            className="px-4 py-3 bg-orchid-700 hover:bg-orchid-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl text-sm font-medium transition-colors"
+                            className="px-4 py-3 h-11 bg-[#4C6EF5] hover:bg-[#5c7cfa] disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white rounded-2xl text-sm font-semibold transition-colors duration-200 flex-shrink-0"
                         >
                             Send
                         </button>
@@ -169,20 +438,136 @@
             );
         }
 
-        function StatsBar({ health }) {
-            if (!health) return null;
+        function TopBar({ health, connected, modelTier, onModelChange }) {
+            const [showModelMenu, setShowModelMenu] = useState(false);
+            const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+            const models = [
+                { id: 'default', name: 'Default', desc: 'Balanced' },
+                { id: 'fast', name: 'Fast', desc: 'Quick' },
+                { id: 'code', name: 'Code', desc: 'Expert' },
+                { id: 'reasoning', name: 'Reasoning', desc: 'Deep' },
+            ];
+
             return (
-                <div className="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-800 text-xs text-gray-500">
-                    <span className="flex items-center gap-1">
-                        <StatusDot connected={health.status === 'healthy'} /> Orchid v{health.version}
-                    </span>
-                    <span className="flex items-center gap-1">
-                        <StatusDot connected={health.database_connected} /> Database
-                    </span>
-                    <span className="flex items-center gap-1">
-                        <StatusDot connected={health.chroma_connected} /> Memory
-                    </span>
-                    <span>Uptime: {Math.round(health.uptime_seconds)}s</span>
+                <div className="border-b border-gray-800 bg-[#0F1319] px-4 py-3">
+                    <div className="max-w-full mx-auto flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => setShowMobileMenu(!showMobileMenu)}
+                                className="md:hidden text-gray-400 hover:text-white"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <StatusDot connected={connected} />
+                                <span className="text-sm text-gray-400">
+                                    {connected ? `Cipher v${health?.version || '1.0'}` : 'Offline'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowModelMenu(!showModelMenu)}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#141925] hover:bg-[#1a1f2e] border border-gray-700 text-sm text-gray-300 transition-colors duration-200"
+                                >
+                                    <span>{models.find(m => m.id === modelTier)?.name || 'Default'}</span>
+                                    <svg className={`w-4 h-4 transition-transform ${showModelMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                    </svg>
+                                </button>
+
+                                {showModelMenu && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-[#141925] border border-gray-700 rounded-lg shadow-xl z-50">
+                                        {models.map(model => (
+                                            <button
+                                                key={model.id}
+                                                onClick={() => {
+                                                    onModelChange(model.id);
+                                                    setShowModelMenu(false);
+                                                }}
+                                                className={`w-full text-left px-4 py-2 text-sm transition-colors duration-200 ${
+                                                    modelTier === model.id
+                                                        ? 'bg-[#4C6EF5]/20 text-[#4C6EF5]'
+                                                        : 'text-gray-400 hover:bg-gray-800/30 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="font-medium">{model.name}</div>
+                                                <div className="text-xs text-gray-500">{model.desc}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function TypingIndicator() {
+            return (
+                <div className="flex justify-start mb-4">
+                    <div className="bg-[#141925] px-4 py-3 rounded-2xl rounded-bl-none border border-gray-800">
+                        <div className="flex gap-1">
+                            <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0s'}} />
+                            <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.2s'}} />
+                            <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.4s'}} />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function EmptyState() {
+            return (
+                <div className="text-center py-32">
+                    <div className="flex justify-center mb-6">
+                        <CipherLogo size="lg" />
+                    </div>
+                    <h2 className="text-2xl font-semibold text-white mb-2">
+                        What can we build together?
+                    </h2>
+                    <p className="text-gray-500 text-sm max-w-md mx-auto">
+                        Start a conversation with Cipher. Ask anything, explore ideas, or build something amazing.
+                    </p>
+                </div>
+            );
+        }
+
+        function ConnectionError() {
+            return (
+                <div className="h-screen flex items-center justify-center bg-[#0A0E1A]">
+                    <div className="text-center max-w-md">
+                        <div className="flex justify-center mb-6">
+                            <CipherLogo size="lg" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-white mb-2">Cipher</h1>
+                        <p className="text-gray-500 text-sm mb-6">by Elysian Protocol</p>
+
+                        <div className="bg-[#141925] border border-gray-800 rounded-lg p-4 mb-6">
+                            <p className="text-gray-400 text-sm mb-4">
+                                Unable to connect to Cipher server
+                            </p>
+                            <p className="text-gray-600 text-xs mb-4">
+                                Make sure the backend is running on localhost:8000
+                            </p>
+                            <code className="block text-xs text-[#4C6EF5] bg-[#0A0E1A] px-3 py-2 rounded font-mono">
+                                uvicorn app.main:app --reload
+                            </code>
+                        </div>
+
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-4 py-2 bg-[#4C6EF5] hover:bg-[#5c7cfa] text-white rounded-lg text-sm font-medium transition-colors duration-200"
+                        >
+                            Retry Connection
+                        </button>
+                    </div>
                 </div>
             );
         }
@@ -196,12 +581,14 @@
             const [loading, setLoading] = useState(false);
             const [health, setHealth] = useState(null);
             const [connected, setConnected] = useState(false);
+            const [modelTier, setModelTier] = useState('default');
+            const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
             const messagesEndRef = useRef(null);
 
             // Scroll to bottom on new messages
             useEffect(() => {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }, [messages]);
+            }, [messages, loading]);
 
             // Load health and conversations on mount
             useEffect(() => {
@@ -212,6 +599,15 @@
                 api('/chat/conversations')
                     .then(data => setConversations(data))
                     .catch(() => {});
+
+                // Poll health every 5 seconds
+                const interval = setInterval(() => {
+                    api('/system/health')
+                        .then(data => setHealth(data))
+                        .catch(() => {});
+                }, 5000);
+
+                return () => clearInterval(interval);
             }, []);
 
             // Load conversation messages
@@ -231,6 +627,8 @@
             };
 
             const sendMessage = async (text) => {
+                const startTime = Date.now();
+
                 // Optimistic update
                 const userMsg = { role: 'user', content: text };
                 setMessages(prev => [...prev, userMsg]);
@@ -242,15 +640,19 @@
                         body: JSON.stringify({
                             message: text,
                             conversation_id: activeConvId,
-                            model_tier: 'default',
+                            model_tier: modelTier,
                             include_memory: true,
                         }),
                     });
+
+                    const responseTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
                     setActiveConvId(data.conversation_id);
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         content: data.message,
+                        responseTime: responseTime,
+                        model: modelTier,
                     }]);
 
                     // Refresh conversation list
@@ -258,7 +660,7 @@
                 } catch (err) {
                     setMessages(prev => [...prev, {
                         role: 'assistant',
-                        content: `Error: ${err.message}. Is Orchid running on port 8000?`,
+                        content: `**Error**: ${err.message}\n\nMake sure Cipher is running on localhost:8000`,
                     }]);
                 } finally {
                     setLoading(false);
@@ -266,66 +668,55 @@
             };
 
             if (!connected) {
-                return (
-                    <div className="h-screen flex items-center justify-center bg-gray-950">
-                        <div className="text-center">
-                            <div className="w-16 h-16 rounded-2xl bg-orchid-700 flex items-center justify-center mx-auto mb-4">
-                                <span className="text-white font-bold text-2xl">O</span>
-                            </div>
-                            <h1 className="text-xl font-semibold text-white mb-2">Orchid</h1>
-                            <p className="text-gray-500 text-sm mb-4">Connecting to Orchid server...</p>
-                            <p className="text-gray-600 text-xs">Make sure Orchid is running on localhost:8000</p>
-                            <code className="block mt-4 text-xs text-orchid-400 bg-gray-900 px-4 py-2 rounded-lg">
-                                uvicorn app.main:app --reload
-                            </code>
-                        </div>
-                    </div>
-                );
+                return <ConnectionError />;
             }
 
             return (
-                <div className="h-screen flex">
+                <div className="h-screen flex bg-[#0A0E1A]">
                     <Sidebar
                         conversations={conversations}
                         activeId={activeConvId}
                         onSelect={loadConversation}
                         onNew={startNewConversation}
+                        isMobileOpen={mobileMenuOpen}
+                        onMobileClose={() => setMobileMenuOpen(false)}
                     />
+
                     <div className="flex-1 flex flex-col">
-                        <StatsBar health={health} />
-                        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-                            <div className="max-w-3xl mx-auto">
-                                {messages.length === 0 && (
-                                    <div className="text-center py-20">
-                                        <div className="w-16 h-16 rounded-2xl bg-orchid-700/20 flex items-center justify-center mx-auto mb-4">
-                                            <span className="text-orchid-400 font-bold text-2xl">O</span>
-                                        </div>
-                                        <h2 className="text-lg font-medium text-white mb-2">
-                                            Orchid is ready.
-                                        </h2>
-                                        <p className="text-gray-500 text-sm">
-                                            Sovereign AI by Elysian Protocol. Start typing.
-                                        </p>
-                                    </div>
+                        <TopBar
+                            health={health}
+                            connected={connected}
+                            modelTier={modelTier}
+                            onModelChange={setModelTier}
+                        />
+
+                        <div className="flex-1 overflow-y-auto scrollbar-hide">
+                            <div className="max-w-4xl mx-auto w-full px-4 py-6">
+                                {messages.length === 0 ? (
+                                    <EmptyState />
+                                ) : (
+                                    <>
+                                        {messages.map((msg, i) => (
+                                            <ChatMessage
+                                                key={i}
+                                                message={msg}
+                                                showMetadata={msg.role === 'assistant'}
+                                                model={msg.model || 'Default'}
+                                                responseTime={msg.responseTime ? `${msg.responseTime}s` : null}
+                                            />
+                                        ))}
+                                    </>
                                 )}
-                                {messages.map((msg, i) => (
-                                    <ChatMessage key={i} message={msg} />
-                                ))}
-                                {loading && (
-                                    <div className="flex justify-start mb-4">
-                                        <div className="bg-gray-800 px-4 py-3 rounded-2xl">
-                                            <div className="flex gap-1">
-                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0s'}} />
-                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.2s'}} />
-                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.4s'}} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                {loading && <TypingIndicator />}
                                 <div ref={messagesEndRef} />
                             </div>
                         </div>
-                        <ChatInput onSend={sendMessage} disabled={loading} />
+
+                        <ChatInput
+                            onSend={sendMessage}
+                            disabled={loading}
+                            placeholder="Message Cipher..."
+                        />
                     </div>
                 </div>
             );

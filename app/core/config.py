@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     groq_api_key: str = ""
     openai_api_key: str = ""
+    deepseek_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
 
     # --- Model Routing ---
@@ -47,8 +48,11 @@ class Settings(BaseSettings):
     # --- Redis ---
     redis_url: str = "redis://localhost:6379/0"
 
-    # --- Voice (Phase 2) ---
+    # --- Voice ---
     elevenlabs_api_key: str = ""
+    default_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel voice
+    voice_enabled: bool = True
+    emotion_detection_enabled: bool = True
 
     # --- Payments ---
     stripe_secret_key: str = ""
@@ -60,6 +64,15 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 1440
+
+    # --- Scanner ---
+    newsapi_key: str = ""
+    x_bearer_token: str = ""
+    scanner_enabled: bool = True
+    scanner_interval_minutes: int = 60
+
+    # --- Cascade Routing (FrugalGPT) ---
+    cascade_routing_enabled: bool = True  # Enable cascade routing for cost optimization
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -1,0 +1,57 @@
+name: CipherApp
+
+options:
+  bundleIdPrefix: io.elysianprotocol
+  deploymentTarget:
+    iOS: "17.0"
+  defaultConfig: Debug
+  createIntermediateGroups: true
+
+settings:
+  MARKETING_VERSION: 2.0.0
+  CURRENT_PROJECT_VERSION: 1
+  SWIFT_VERSION: 5.9
+
+targets:
+  CipherApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: CipherApp
+        excludes:
+          - "*.md"
+          - ".git"
+    settings:
+      PRODUCT_NAME: Cipher
+      PRODUCT_BUNDLE_IDENTIFIER: io.elysianprotocol.cipher
+      INFOPLIST_FILE: CipherApp/Info.plist
+      INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+      INFOPLIST_KEY_NSMicrophoneUsageDescription: "Cipher uses your microphone for voice conversations"
+      INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Cipher lets you share images for analysis"
+      INFOPLIST_KEY_NSCameraUsageDescription: "Cipher lets you capture images for analysis"
+      INFOPLIST_KEY_NSFaceIDUsageDescription: "Cipher uses Face ID to protect your conversations"
+      INFOPLIST_KEY_UIApplicationSceneManifest:
+        UIApplicationSupportsMultipleScenes: true
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: ""
+      ENABLE_PREVIEWS: true
+      SWIFT_EMIT_LOC_STRINGS: YES
+    preBuildScripts: []
+    postBuildScripts: []
+
+schemes:
+  CipherApp:
+    build:
+      targets:
+        CipherApp: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

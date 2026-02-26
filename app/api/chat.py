@@ -1,8 +1,14 @@
 """
 Chat API endpoints - the primary interface to Orchid.
+
+Supports both free (local) and premium (Elysian Gateway) modes:
+- Without API key: uses user's own LLM API keys (free tier)
+- With Elysian API key: uses managed infrastructure with metering
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -18,19 +24,49 @@ from app.models.schemas import (
 )
 from app.services.orchestrator import process_chat
 from app.services.llm_router import stream_completion
-from app.services.orchestrator import ORCHID_SYSTEM_PROMPT
+from app.services.orchestrator import CIPHER_SYSTEM_PROMPT
+from app.gateway.auth import optional_api_key, GatewayAuth, record_usage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/", response_model=ChatResponse)
-async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
+async def send_message(
+    request: ChatRequest,
+    req: Request = None,
+    x_elysian_key: Optional[str] = Header(None, alias="X-Elysian-Key"),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
     """
     Send a message to Orchid and receive an intelligent response.
     The orchestrator handles memory retrieval, model routing, and context management.
+
+    Works in both free (no API key) and premium (Elysian API key) modes.
     """
+    # Optional gateway auth — meter usage if key present
+    auth = None
     try:
-        return await process_chat(request, db)
+        auth = await optional_api_key(req, x_elysian_key, authorization, db)
+    except Exception:
+        pass  # No key or invalid key — continue in free mode
+
+    try:
+        response = await process_chat(request, db)
+
+        # Record usage if authenticated
+        if auth:
+            record_usage(
+                db=db,
+                auth=auth,
+                feature="chat",
+                input_tokens=0,  # Populated by orchestrator
+                output_tokens=response.tokens_used,
+                cost_usd=response.cost_usd,
+                model=response.model_used,
+            )
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -62,7 +98,7 @@ async def stream_message(request: ChatRequest, db: Session = Depends(get_db)):
             model_tier=request.model_tier,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
-            system_prompt=request.system_prompt or ORCHID_SYSTEM_PROMPT,
+            system_prompt=request.system_prompt or CIPHER_SYSTEM_PROMPT,
         ):
             yield f"data: {chunk}\n\n"
         yield "data: [DONE]\n\n"

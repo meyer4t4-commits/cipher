@@ -50,4 +50,5 @@ def get_db() -> Session:
 def init_db():
     """Create all tables. Called on startup."""
     import app.db.models  # noqa: F401 - ensures models are registered
+    import app.gateway.models  # noqa: F401 - Elysian Gateway tables
     Base.metadata.create_all(bind=engine)
