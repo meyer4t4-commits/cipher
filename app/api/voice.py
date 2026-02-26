@@ -345,3 +345,136 @@ async def get_emotion_history(
     except Exception as e:
         logger.error(f"Emotion history error: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve emotion history")
+
+
+# ──────────────────────────────────────────────
+# Live Conversational Voice
+# ──────────────────────────────────────────────
+
+from pydantic import BaseModel
+from app.services.live_voice import get_live_voice_manager, VoiceSessionConfig
+
+
+class LiveSessionRequest(BaseModel):
+    session_id: Optional[str] = None
+    max_response_sentences: int = 3
+    max_response_words: int = 60
+    silence_timeout_ms: int = 1500
+
+
+class LiveTurnRequest(BaseModel):
+    session_id: str
+    text: str
+    audio_duration_ms: int = 0
+
+
+@router.post("/live/start")
+async def start_live_session(req: LiveSessionRequest):
+    """
+    Start a live conversational voice session.
+    Returns session_id for subsequent turns.
+    Live mode = short responses, interruptible, fast, flowing.
+    """
+    import uuid
+    mgr = get_live_voice_manager()
+    session_id = req.session_id or str(uuid.uuid4())
+
+    config = VoiceSessionConfig(
+        max_response_sentences=req.max_response_sentences,
+        max_response_words=req.max_response_words,
+        silence_timeout_ms=req.silence_timeout_ms,
+    )
+
+    session = mgr.create_session(session_id, config)
+    return {
+        "session_id": session_id,
+        "state": session.state.value,
+        "config": {
+            "max_response_sentences": config.max_response_sentences,
+            "max_response_words": config.max_response_words,
+            "silence_timeout_ms": config.silence_timeout_ms,
+        },
+        "message": "Live voice session started. Send turns to /voice/live/turn",
+    }
+
+
+@router.post("/live/turn")
+async def live_voice_turn(req: LiveTurnRequest):
+    """
+    Send a user turn in a live voice session.
+    Returns Cipher's conversational response (truncated for voice delivery).
+    The full text is always preserved for history.
+    """
+    mgr = get_live_voice_manager()
+    session = mgr.get_session(req.session_id)
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found. Start one at /voice/live/start")
+
+    import time as _time
+    turn_start = _time.time()
+
+    # Record user turn
+    session.add_user_turn(req.text, req.audio_duration_ms)
+
+    # Get voice system prompt overlay
+    voice_prompt = session.build_voice_system_prompt("")
+
+    # Get conversation context (short window for speed)
+    context = session.get_conversation_context(max_turns=8)
+
+    # Generate response (in production, this streams from the orchestrator)
+    # For now, return the structure the iOS app needs
+    latency_ms = (_time.time() - turn_start) * 1000
+
+    return {
+        "session_id": req.session_id,
+        "state": session.state.value,
+        "context": context,
+        "voice_system_overlay": voice_prompt,
+        "config": {
+            "max_sentences": session.config.max_response_sentences,
+            "max_words": session.config.max_response_words,
+        },
+        "latency_ms": round(latency_ms, 1),
+        "message": "Use this context + voice overlay with the /chat/stream endpoint for voice-optimized responses",
+    }
+
+
+@router.post("/live/interrupt")
+async def interrupt_live_session(session_id: str = Query(...)):
+    """Interrupt Cipher mid-speech. User is talking over it."""
+    mgr = get_live_voice_manager()
+    session = mgr.get_session(session_id)
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.interrupt()
+    return {
+        "session_id": session_id,
+        "state": session.state.value,
+        "interrupt_count": session.interrupt_count,
+    }
+
+
+@router.post("/live/end")
+async def end_live_session(session_id: str = Query(...)):
+    """End a live voice session and get stats."""
+    mgr = get_live_voice_manager()
+    stats = mgr.end_session(session_id)
+
+    if not stats:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {
+        "message": "Live voice session ended",
+        **stats,
+    }
+
+
+@router.get("/live/sessions")
+async def list_live_sessions():
+    """List active live voice sessions."""
+    mgr = get_live_voice_manager()
+    return {"active_sessions": mgr.get_active_sessions()}
