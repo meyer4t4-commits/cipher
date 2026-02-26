@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orchid - Elysian Protocol</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        orchid: {
+                            50: '#f0f4ff',
+                            100: '#dbe4ff',
+                            200: '#bac8ff',
+                            300: '#91a7ff',
+                            400: '#748ffc',
+                            500: '#5c7cfa',
+                            600: '#4c6ef5',
+                            700: '#4263eb',
+                            800: '#3b5bdb',
+                            900: '#364fc7',
+                            950: '#1b3a5c',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        code, pre { font-family: 'JetBrains Mono', monospace; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const API = 'http://localhost:8000/api/v1';
+
+        // ==================== API Helpers ====================
+        async function api(path, options = {}) {
+            const res = await fetch(`${API}${path}`, {
+                headers: { 'Content-Type': 'application/json', ...options.headers },
+                ...options,
+            });
+            if (!res.ok) throw new Error(`API error: ${res.status}`);
+            return res.json();
+        }
+
+        // ==================== Components ====================
+
+        function StatusDot({ connected }) {
+            return (
+                <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-400 pulse-dot' : 'bg-red-400'}`} />
+            );
+        }
+
+        function Sidebar({ conversations, activeId, onSelect, onNew }) {
+            return (
+                <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col h-full">
+                    <div className="p-4 border-b border-gray-800">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="w-8 h-8 rounded-lg bg-orchid-700 flex items-center justify-center">
+                                <span className="text-white font-bold text-sm">O</span>
+                            </div>
+                            <div>
+                                <h1 className="text-sm font-semibold text-white">Orchid</h1>
+                                <p className="text-xs text-gray-500">Elysian Protocol</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onNew}
+                            className="w-full py-2 px-3 rounded-lg bg-orchid-700 hover:bg-orchid-600 text-white text-sm font-medium transition-colors"
+                        >
+                            + New Conversation
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto scrollbar-hide p-2">
+                        {conversations.map(conv => (
+                            <button
+                                key={conv.id}
+                                onClick={() => onSelect(conv.id)}
+                                className={`w-full text-left p-3 rounded-lg mb-1 transition-colors ${
+                                    activeId === conv.id
+                                        ? 'bg-gray-800 text-white'
+                                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'
+                                }`}
+                            >
+                                <div className="text-sm font-medium truncate">
+                                    {conv.title || 'New conversation'}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    {conv.message_count} messages
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        function ChatMessage({ message }) {
+            const isUser = message.role === 'user';
+            return (
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+                    <div className={`max-w-2xl px-4 py-3 rounded-2xl ${
+                        isUser
+                            ? 'bg-orchid-700 text-white'
+                            : 'bg-gray-800 text-gray-100'
+                    }`}>
+                        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ChatInput({ onSend, disabled }) {
+            const [text, setText] = useState('');
+            const textareaRef = useRef(null);
+
+            const handleSubmit = () => {
+                if (text.trim() && !disabled) {
+                    onSend(text.trim());
+                    setText('');
+                }
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit();
+                }
+            };
+
+            return (
+                <div className="border-t border-gray-800 p-4">
+                    <div className="max-w-3xl mx-auto flex gap-2">
+                        <textarea
+                            ref={textareaRef}
+                            value={text}
+                            onChange={(e) => setText(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder="Message Orchid..."
+                            rows={1}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orchid-600 resize-none"
+                            disabled={disabled}
+                        />
+                        <button
+                            onClick={handleSubmit}
+                            disabled={disabled || !text.trim()}
+                            className="px-4 py-3 bg-orchid-700 hover:bg-orchid-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl text-sm font-medium transition-colors"
+                        >
+                            Send
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        function StatsBar({ health }) {
+            if (!health) return null;
+            return (
+                <div className="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-800 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                        <StatusDot connected={health.status === 'healthy'} /> Orchid v{health.version}
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <StatusDot connected={health.database_connected} /> Database
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <StatusDot connected={health.chroma_connected} /> Memory
+                    </span>
+                    <span>Uptime: {Math.round(health.uptime_seconds)}s</span>
+                </div>
+            );
+        }
+
+        // ==================== App ====================
+
+        function App() {
+            const [conversations, setConversations] = useState([]);
+            const [activeConvId, setActiveConvId] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [health, setHealth] = useState(null);
+            const [connected, setConnected] = useState(false);
+            const messagesEndRef = useRef(null);
+
+            // Scroll to bottom on new messages
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            // Load health and conversations on mount
+            useEffect(() => {
+                api('/system/health')
+                    .then(data => { setHealth(data); setConnected(true); })
+                    .catch(() => setConnected(false));
+
+                api('/chat/conversations')
+                    .then(data => setConversations(data))
+                    .catch(() => {});
+            }, []);
+
+            // Load conversation messages
+            const loadConversation = useCallback(async (convId) => {
+                setActiveConvId(convId);
+                try {
+                    const data = await api(`/chat/conversations/${convId}`);
+                    setMessages(data.messages || []);
+                } catch {
+                    setMessages([]);
+                }
+            }, []);
+
+            const startNewConversation = () => {
+                setActiveConvId(null);
+                setMessages([]);
+            };
+
+            const sendMessage = async (text) => {
+                // Optimistic update
+                const userMsg = { role: 'user', content: text };
+                setMessages(prev => [...prev, userMsg]);
+                setLoading(true);
+
+                try {
+                    const data = await api('/chat/', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            message: text,
+                            conversation_id: activeConvId,
+                            model_tier: 'default',
+                            include_memory: true,
+                        }),
+                    });
+
+                    setActiveConvId(data.conversation_id);
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: data.message,
+                    }]);
+
+                    // Refresh conversation list
+                    api('/chat/conversations').then(setConversations).catch(() => {});
+                } catch (err) {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `Error: ${err.message}. Is Orchid running on port 8000?`,
+                    }]);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            if (!connected) {
+                return (
+                    <div className="h-screen flex items-center justify-center bg-gray-950">
+                        <div className="text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-orchid-700 flex items-center justify-center mx-auto mb-4">
+                                <span className="text-white font-bold text-2xl">O</span>
+                            </div>
+                            <h1 className="text-xl font-semibold text-white mb-2">Orchid</h1>
+                            <p className="text-gray-500 text-sm mb-4">Connecting to Orchid server...</p>
+                            <p className="text-gray-600 text-xs">Make sure Orchid is running on localhost:8000</p>
+                            <code className="block mt-4 text-xs text-orchid-400 bg-gray-900 px-4 py-2 rounded-lg">
+                                uvicorn app.main:app --reload
+                            </code>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="h-screen flex">
+                    <Sidebar
+                        conversations={conversations}
+                        activeId={activeConvId}
+                        onSelect={loadConversation}
+                        onNew={startNewConversation}
+                    />
+                    <div className="flex-1 flex flex-col">
+                        <StatsBar health={health} />
+                        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+                            <div className="max-w-3xl mx-auto">
+                                {messages.length === 0 && (
+                                    <div className="text-center py-20">
+                                        <div className="w-16 h-16 rounded-2xl bg-orchid-700/20 flex items-center justify-center mx-auto mb-4">
+                                            <span className="text-orchid-400 font-bold text-2xl">O</span>
+                                        </div>
+                                        <h2 className="text-lg font-medium text-white mb-2">
+                                            Orchid is ready.
+                                        </h2>
+                                        <p className="text-gray-500 text-sm">
+                                            Sovereign AI by Elysian Protocol. Start typing.
+                                        </p>
+                                    </div>
+                                )}
+                                {messages.map((msg, i) => (
+                                    <ChatMessage key={i} message={msg} />
+                                ))}
+                                {loading && (
+                                    <div className="flex justify-start mb-4">
+                                        <div className="bg-gray-800 px-4 py-3 rounded-2xl">
+                                            <div className="flex gap-1">
+                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0s'}} />
+                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.2s'}} />
+                                                <span className="w-2 h-2 bg-gray-500 rounded-full pulse-dot" style={{animationDelay: '0.4s'}} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                <div ref={messagesEndRef} />
+                            </div>
+                        </div>
+                        <ChatInput onSend={sendMessage} disabled={loading} />
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

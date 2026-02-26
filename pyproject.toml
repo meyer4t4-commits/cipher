@@ -1,0 +1,50 @@
+[project]
+name = "orchid"
+version = "0.1.0"
+description = "Orchid - Sovereign AI Intelligence Daemon by Elysian Protocol"
+requires-python = ">=3.12"
+authors = [
+    { name = "Mark Meyer", email = "meyer4t4@gmail.com" }
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "litellm>=1.55.0",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "chromadb>=0.5.23",
+    "python-telegram-bot>=21.9",
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.18",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.1",
+    "rich>=13.9.0",
+    "tiktoken>=0.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+]
+voice = [
+    "elevenlabs>=1.15.0",
+    "openai-whisper>=20240930",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,60 @@
+# ============================================================
+# Orchid - Full Stack Docker Compose
+# Run: docker compose up -d
+# ============================================================
+
+services:
+  # --- Orchid API Server ---
+  orchid:
+    build: .
+    container_name: orchid-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - orchid-data:/app/data          # Persist SQLite + ChromaDB
+      - ./dashboard:/app/dashboard      # Dashboard hot-reload
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Redis (for Celery task queue) ---
+  redis:
+    image: redis:7-alpine
+    container_name: orchid-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- Celery Worker (background tasks) ---
+  worker:
+    build: .
+    container_name: orchid-worker
+    command: celery -A app.services.tasks worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - orchid-data:/app/data
+    depends_on:
+      - redis
+      - orchid
+    restart: unless-stopped
+
+volumes:
+  orchid-data:
+    driver: local
+  redis-data:
+    driver: local
