@@ -357,9 +357,13 @@
                             ? 'bg-[#4C6EF5] text-white rounded-br-none'
                             : 'bg-[#141925] text-gray-100 rounded-bl-none border border-gray-800'
                     }`}>
-                        <div className="text-sm markdown-content" dangerouslySetInnerHTML={{
-                            __html: isUser ? content : renderMarkdown(message.content)
-                        }} />
+                        {isUser ? (
+                            <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                        ) : (
+                            <div className="text-sm markdown-content" dangerouslySetInnerHTML={{
+                                __html: renderMarkdown(message.content)
+                            }} />
+                        )}
                         {showMetadata && !isUser && (
                             <div className="mt-2 pt-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
                                 <span>{model}</span>
@@ -369,18 +373,6 @@
                     </div>
                 </div>
             );
-
-            // Fallback without dangerouslySetInnerHTML for user messages
-            if (isUser) {
-                const content = message.content;
-                return (
-                    <div className={`flex justify-end mb-4 message-enter`}>
-                        <div className="max-w-2xl px-5 py-3 rounded-2xl bg-[#4C6EF5] text-white rounded-br-none">
-                            <div className="text-sm whitespace-pre-wrap">{content}</div>
-                        </div>
-                    </div>
-                );
-            }
         }
 
         function ChatInput({ onSend, disabled, placeholder = "Message Cipher..." }) {

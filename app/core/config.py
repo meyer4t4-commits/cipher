@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     btcpay_api_key: str = ""
 
     # --- Security ---
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:8000,https://elysianprotocol.io,https://www.elysianprotocol.io,https://api.elysianprotocol.io"
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 1440
 

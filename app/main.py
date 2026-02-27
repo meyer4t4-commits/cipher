@@ -56,10 +56,13 @@ async def lifespan(app: FastAPI):
     if settings.emotion_detection_enabled:
         logger.info("Emotion detection enabled")
 
-    # Start scanner if enabled
+    # Start scanner if enabled (non-blocking — won't crash server if scanner fails)
     if settings.scanner_enabled:
-        await start_scanner()
-        logger.info("Intelligence scanner started")
+        try:
+            await start_scanner()
+            logger.info("Intelligence scanner started")
+        except Exception as e:
+            logger.warning(f"Scanner failed to start (non-fatal): {e}")
 
     yield
     logger.info("Cipher shutting down")
