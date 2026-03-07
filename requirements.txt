@@ -1,0 +1,38 @@
+# Cipher - Sovereign AI Dependencies
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.1
+python-multipart>=0.0.18
+
+# LLM
+litellm>=1.55.0
+tiktoken>=0.8.0
+
+# Database
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+chromadb>=0.5.23
+
+# Auth & Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+email-validator>=2.1.0
+
+# HTTP
+httpx>=0.28.0
+
+# Telegram
+python-telegram-bot>=21.9
+
+# Task queue
+celery[redis]>=5.4.0
+redis>=5.2.0
+
+# Voice (ElevenLabs)
+elevenlabs>=1.15.0
+
+# Logging
+rich>=13.9.0

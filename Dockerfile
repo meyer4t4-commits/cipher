@@ -11,25 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir pip --upgrade && \
-    pip install --no-cache-dir . 2>/dev/null || \
-    pip install --no-cache-dir \
-    "fastapi>=0.115.0" \
-    "uvicorn[standard]>=0.34.0" \
-    "litellm>=1.55.0" \
-    "sqlalchemy>=2.0.36" \
-    "pydantic>=2.10.0" \
-    "pydantic-settings>=2.7.0" \
-    "python-jose[cryptography]>=3.3.0" \
-    "passlib[bcrypt]>=1.7.4" \
-    "python-multipart>=0.0.18" \
-    "email-validator>=2.1.0" \
-    "httpx>=0.28.0" \
-    "python-dotenv>=1.0.1" \
-    "rich>=13.9.0" \
-    "tiktoken>=0.8.0"
+# Python deps — use requirements.txt for reliable installs
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY app/ ./app/
