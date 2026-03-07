@@ -8,7 +8,7 @@ struct AppConstants {
     static let appVersion = "2.0.0"
     static let publisherName = "Elysian Protocol"
 
-    static let defaultServerURL = "http://localhost:8000"
+    static let defaultServerURL = "https://cipher-elysian-production-b6a8.up.railway.app"
     static let apiBasePath = "/api/v1"
     static let chatEndpoint = "/chat/"
     static let streamEndpoint = "/chat/stream"

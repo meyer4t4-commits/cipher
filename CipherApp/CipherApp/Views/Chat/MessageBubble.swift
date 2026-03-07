@@ -56,17 +56,9 @@ struct MessageBubble: View {
 
     private var assistantBubble: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(CipherTheme.accentGradient)
-                    .frame(width: 30, height: 30)
-
-                Text("C")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
-            .padding(.top, 2)
+            // Avatar — spinning when streaming, static when done
+            SpinningCipherLogo(size: 28, spinning: message.isStreaming)
+                .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 // Content

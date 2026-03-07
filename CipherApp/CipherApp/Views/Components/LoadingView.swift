@@ -7,66 +7,66 @@ struct LoadingView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .stroke(CipherTheme.surface, lineWidth: 2)
-                    .frame(width: 40, height: 40)
-
-                Circle()
-                    .trim(from: 0, to: 0.7)
-                    .stroke(CipherTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .frame(width: 40, height: 40)
-                    .rotationEffect(.degrees(isAnimating ? 360 : 0))
-            }
+            SpinningCipherLogo(size: 40, spinning: true)
 
             Text("Processing...")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(CipherTheme.textSecondary)
         }
-        .onAppear {
-            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                isAnimating = true
-            }
-        }
     }
 }
 
-// MARK: - Typing Indicator (Premium)
+// MARK: - Typing Indicator (with Thinking Status)
 
 struct TypingIndicator: View {
     @State private var dotScales: [CGFloat] = [0.5, 0.5, 0.5]
     @State private var dotOpacities: [Double] = [0.3, 0.3, 0.3]
+    @State private var thinkingPhase = 0
+    @State private var showStatus = false
+
+    private let thinkingStatuses = [
+        "Analyzing your request...",
+        "Routing to best model...",
+        "Evaluating context...",
+        "Composing response...",
+        "Thinking deeply...",
+        "Processing with agents...",
+        "Synthesizing information...",
+    ]
 
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Cipher avatar mini
-            ZStack {
-                Circle()
-                    .fill(CipherTheme.accentGradient)
-                    .frame(width: 28, height: 28)
+            // Cipher spinning avatar
+            SpinningCipherLogo(size: 28, spinning: true)
 
-                Text("C")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
+            // Thinking bubble with status
+            VStack(alignment: .leading, spacing: 4) {
+                // Animated dots
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(CipherTheme.accent)
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(dotScales[index])
+                            .opacity(dotOpacities[index])
+                    }
+                }
 
-            // Animated dots
-            HStack(spacing: 5) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(CipherTheme.accent)
-                        .frame(width: 7, height: 7)
-                        .scaleEffect(dotScales[index])
-                        .opacity(dotOpacities[index])
+                // Thinking status text
+                if showStatus {
+                    Text(thinkingStatuses[thinkingPhase % thinkingStatuses.count])
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(CipherTheme.textTertiary)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(CipherTheme.surfaceElevated)
                     .overlay(
-                        Capsule()
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .stroke(CipherTheme.border, lineWidth: 0.5)
                     )
             )
@@ -77,6 +77,18 @@ struct TypingIndicator: View {
         .padding(.vertical, Spacing.sm)
         .onAppear {
             animateDots()
+            // Show status text after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                withAnimation(.easeIn(duration: 0.3)) {
+                    showStatus = true
+                }
+            }
+            // Cycle through thinking statuses
+            Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    thinkingPhase += 1
+                }
+            }
         }
     }
 

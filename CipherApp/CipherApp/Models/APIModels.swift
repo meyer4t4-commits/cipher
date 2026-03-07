@@ -48,7 +48,7 @@ struct ChatResponse: Codable {
     let modelUsed: String
     let tokensUsed: Int
     let costUsd: Double
-    let timestamp: Date
+    let timestamp: String?
 
     enum CodingKeys: String, CodingKey {
         case message
@@ -83,7 +83,21 @@ struct StreamChunk: Codable {
 
 struct HealthResponse: Codable {
     let status: String
-    let timestamp: Date
+    let version: String?
+    let uptimeSeconds: Double?
+    let databaseConnected: Bool?
+    let chromaConnected: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case status, version
+        case uptimeSeconds = "uptime_seconds"
+        case databaseConnected = "database_connected"
+        case chromaConnected = "chroma_connected"
+    }
+
+    var isHealthy: Bool {
+        status == "ok" || status == "healthy"
+    }
 }
 
 // MARK: - Conversation List Response

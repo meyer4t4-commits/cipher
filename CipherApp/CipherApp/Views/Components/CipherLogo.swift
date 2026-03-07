@@ -1,40 +1,60 @@
 import SwiftUI
 
-// MARK: - Cipher Logo
+// MARK: - Cipher Logo (Geometric Shield)
 
 struct CipherLogo: View {
     var size: CGFloat = 64
     var animated: Bool = false
     @State private var glowPhase = false
+    @State private var rotationAngle: Double = 0
 
     var body: some View {
         ZStack {
             // Outer glow
             if animated {
-                RoundedRectangle(cornerRadius: size * 0.22)
-                    .fill(CipherTheme.accent.opacity(0.2))
-                    .frame(width: size + 8, height: size + 8)
-                    .blur(radius: glowPhase ? 12 : 6)
+                Circle()
+                    .fill(CipherTheme.accent.opacity(0.15))
+                    .frame(width: size + 12, height: size + 12)
+                    .blur(radius: glowPhase ? 14 : 8)
             }
 
-            // Main shape
+            // Main shape — rounded square
             RoundedRectangle(cornerRadius: size * 0.22)
                 .fill(CipherTheme.accentGradient)
                 .shadow(color: CipherTheme.accent.opacity(0.4), radius: 12, y: 4)
 
-            // Inner pattern — subtle geometric
+            // Inner design — geometric cipher mark
             ZStack {
-                // The "C" letterform
-                Text("C")
-                    .font(.system(size: size * 0.52, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-
-                // Subtle orbit ring
+                // Outer orbit ring
                 Circle()
-                    .trim(from: 0.1, to: 0.4)
-                    .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: size * 0.025, lineCap: .round))
-                    .frame(width: size * 0.7, height: size * 0.7)
-                    .rotationEffect(.degrees(animated && glowPhase ? 360 : 0))
+                    .trim(from: 0.0, to: 0.35)
+                    .stroke(
+                        Color.white.opacity(0.5),
+                        style: StrokeStyle(lineWidth: size * 0.03, lineCap: .round)
+                    )
+                    .frame(width: size * 0.72, height: size * 0.72)
+                    .rotationEffect(.degrees(animated ? rotationAngle : 0))
+
+                // Second orbit ring (opposite direction)
+                Circle()
+                    .trim(from: 0.5, to: 0.8)
+                    .stroke(
+                        Color.white.opacity(0.3),
+                        style: StrokeStyle(lineWidth: size * 0.025, lineCap: .round)
+                    )
+                    .frame(width: size * 0.58, height: size * 0.58)
+                    .rotationEffect(.degrees(animated ? -rotationAngle * 0.7 : 0))
+
+                // Central shield shape
+                CipherShieldShape()
+                    .fill(Color.white)
+                    .frame(width: size * 0.38, height: size * 0.44)
+
+                // Inner dot — the "eye"
+                Circle()
+                    .fill(CipherTheme.accent)
+                    .frame(width: size * 0.09, height: size * 0.09)
+                    .offset(y: -size * 0.02)
             }
         }
         .frame(width: size, height: size)
@@ -43,7 +63,117 @@ struct CipherLogo: View {
                 withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
                     glowPhase = true
                 }
+                withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                    rotationAngle = 360
+                }
             }
+        }
+    }
+}
+
+// MARK: - Shield Shape
+
+struct CipherShieldShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        let cx = rect.midX
+
+        path.move(to: CGPoint(x: cx, y: 0))
+        path.addCurve(
+            to: CGPoint(x: w, y: h * 0.25),
+            control1: CGPoint(x: w * 0.65, y: 0),
+            control2: CGPoint(x: w, y: h * 0.1)
+        )
+        path.addCurve(
+            to: CGPoint(x: cx, y: h),
+            control1: CGPoint(x: w, y: h * 0.55),
+            control2: CGPoint(x: cx, y: h * 0.85)
+        )
+        path.addCurve(
+            to: CGPoint(x: 0, y: h * 0.25),
+            control1: CGPoint(x: 0, y: h * 0.85),
+            control2: CGPoint(x: 0, y: h * 0.55)
+        )
+        path.addCurve(
+            to: CGPoint(x: cx, y: 0),
+            control1: CGPoint(x: 0, y: h * 0.1),
+            control2: CGPoint(x: w * 0.35, y: 0)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - Spinning Cipher Logo (Cowork-style)
+
+struct SpinningCipherLogo: View {
+    var size: CGFloat = 32
+    var spinning: Bool = true
+    @State private var rotation: Double = 0
+    @State private var pulse: Bool = false
+
+    var body: some View {
+        ZStack {
+            // Pulse ring
+            if spinning {
+                Circle()
+                    .stroke(CipherTheme.accent.opacity(pulse ? 0.0 : 0.3), lineWidth: 1.5)
+                    .frame(width: size + 8, height: size + 8)
+                    .scaleEffect(pulse ? 1.4 : 1.0)
+            }
+
+            // Background circle
+            Circle()
+                .fill(CipherTheme.accentGradient)
+                .frame(width: size, height: size)
+                .shadow(color: CipherTheme.accent.opacity(0.3), radius: 6, y: 2)
+
+            // Spinning orbit arcs
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: 0.3)
+                    .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: size * 0.04, lineCap: .round))
+                    .frame(width: size * 0.75, height: size * 0.75)
+                    .rotationEffect(.degrees(rotation))
+
+                Circle()
+                    .trim(from: 0.5, to: 0.75)
+                    .stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: size * 0.035, lineCap: .round))
+                    .frame(width: size * 0.55, height: size * 0.55)
+                    .rotationEffect(.degrees(-rotation * 0.6))
+            }
+
+            // Central shield
+            CipherShieldShape()
+                .fill(Color.white)
+                .frame(width: size * 0.3, height: size * 0.36)
+
+            // Inner eye
+            Circle()
+                .fill(CipherTheme.accent)
+                .frame(width: size * 0.07, height: size * 0.07)
+                .offset(y: -size * 0.015)
+        }
+        .frame(width: size + 10, height: size + 10)
+        .onAppear {
+            startAnimations()
+        }
+        .onChange(of: spinning) { _, newValue in
+            if newValue {
+                startAnimations()
+            }
+        }
+    }
+
+    private func startAnimations() {
+        guard spinning else { return }
+        withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+            rotation = 360
+        }
+        withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+            pulse = true
         }
     }
 }
@@ -146,6 +276,7 @@ struct ConnectionIndicator: View {
 
         VStack(spacing: 30) {
             CipherLogo(size: 80, animated: true)
+            SpinningCipherLogo(size: 40, spinning: true)
             LogoText()
             PrivacyBadge()
             ConnectionIndicator(isConnected: true)

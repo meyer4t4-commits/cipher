@@ -95,7 +95,7 @@ class OrchidAPI {
             }
 
             let healthResponse = try decoder.decode(HealthResponse.self, from: data)
-            self.isHealthy = healthResponse.status == "ok"
+            self.isHealthy = healthResponse.isHealthy
             self.lastHealthCheck = Date()
             self.latencyMs = Int(Date().timeIntervalSince(start) * 1000)
             return isHealthy

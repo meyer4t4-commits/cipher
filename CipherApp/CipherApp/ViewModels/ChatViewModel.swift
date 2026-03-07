@@ -49,7 +49,7 @@ class ChatViewModel {
     }
 
     var streamingEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "streaming_enabled") as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: "streaming_enabled") as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: "streaming_enabled") }
     }
 
@@ -117,7 +117,7 @@ class ChatViewModel {
                 conversationId: response.conversationId,
                 content: response.message,
                 role: .assistant,
-                timestamp: response.timestamp,
+                timestamp: Date(),
                 status: .delivered,
                 modelUsed: response.modelUsed,
                 tokensUsed: response.tokensUsed,
