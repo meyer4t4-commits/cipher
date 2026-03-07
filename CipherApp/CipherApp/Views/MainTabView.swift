@@ -40,19 +40,26 @@ struct MainTabView: View {
                 }
                 .tag(0)
 
-            ConversationListView()
+            AgentsView()
                 .tabItem {
-                    Image(systemName: selectedTab == 1 ? "clock.fill" : "clock")
-                    Text("History")
+                    Image(systemName: selectedTab == 1 ? "cpu.fill" : "cpu")
+                    Text("Agents")
                 }
                 .tag(1)
 
-            SettingsView()
+            ConversationListView()
                 .tabItem {
-                    Image(systemName: selectedTab == 2 ? "gearshape.fill" : "gearshape")
-                    Text("Settings")
+                    Image(systemName: selectedTab == 2 ? "clock.fill" : "clock")
+                    Text("History")
                 }
                 .tag(2)
+
+            SettingsView()
+                .tabItem {
+                    Image(systemName: selectedTab == 3 ? "gearshape.fill" : "gearshape")
+                    Text("Settings")
+                }
+                .tag(3)
         }
         .tint(CipherTheme.accent)
         .onChange(of: selectedTab) { oldValue, _ in

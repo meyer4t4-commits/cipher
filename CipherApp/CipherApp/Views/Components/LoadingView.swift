@@ -23,6 +23,10 @@ struct TypingIndicator: View {
     @State private var dotOpacities: [Double] = [0.3, 0.3, 0.3]
     @State private var thinkingPhase = 0
     @State private var showStatus = false
+    @State private var statusOpacity: Double = 0
+    private var currentStatus: String {
+        thinkingStatuses[thinkingPhase % thinkingStatuses.count]
+    }
 
     private let thinkingStatuses = [
         "Analyzing your request...",
@@ -52,12 +56,14 @@ struct TypingIndicator: View {
                     }
                 }
 
-                // Thinking status text
+                // Thinking status text with smooth crossfade
                 if showStatus {
-                    Text(thinkingStatuses[thinkingPhase % thinkingStatuses.count])
+                    Text(currentStatus)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(CipherTheme.textTertiary)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .opacity(statusOpacity)
+                        .frame(height: 15)
+                        .transition(.opacity)
                 }
             }
             .padding(.horizontal, 14)
@@ -81,12 +87,22 @@ struct TypingIndicator: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 withAnimation(.easeIn(duration: 0.3)) {
                     showStatus = true
+                    statusOpacity = 1.0
                 }
             }
-            // Cycle through thinking statuses
-            Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
-                withAnimation(.easeInOut(duration: 0.3)) {
+            // Cycle through thinking statuses with smooth crossfade
+            var timer: Timer?
+            timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
+                // Fade out
+                withAnimation(.easeOut(duration: 0.25)) {
+                    statusOpacity = 0
+                }
+                // Update text and fade in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     thinkingPhase += 1
+                    withAnimation(.easeIn(duration: 0.25)) {
+                        statusOpacity = 1.0
+                    }
                 }
             }
         }

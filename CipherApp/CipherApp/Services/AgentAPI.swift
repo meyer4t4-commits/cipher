@@ -120,6 +120,42 @@ extension OrchidAPI {
         return result.entries
     }
 
+    /// Execute a task with the given agent and instruction
+    func executeTask(agentName: String, instruction: String) async throws -> AgentExecutionResult {
+        let endpoint = serverURL + AppConstants.apiBasePath + "/agents/execute"
+        guard let url = URL(string: endpoint) else {
+            throw APIError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let request: [String: Any] = [
+            "agent_name": agentName,
+            "instruction": instruction,
+            "params": [:],
+            "timeout_seconds": 30,
+            "priority": "normal"
+        ]
+
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: request)
+
+        let (data, response) = try await session.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw APIError.serverError(httpResponse.statusCode, errorMessage)
+        }
+
+        do {
+            return try decoder.decode(AgentExecutionResult.self, from: data)
+        } catch {
+            throw APIError.decodingError
+        }
+    }
+
     // MARK: - Cron Tasks
 
     /// Fetch all cron tasks

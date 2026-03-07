@@ -106,74 +106,194 @@ struct CipherShieldShape: Shape {
     }
 }
 
-// MARK: - Spinning Cipher Logo (Cowork-style)
+// MARK: - Spinning Cipher Logo (Premium Orrery Animation)
 
 struct SpinningCipherLogo: View {
     var size: CGFloat = 32
     var spinning: Bool = true
-    @State private var rotation: Double = 0
-    @State private var pulse: Bool = false
+
+    // Outer rings (fast, medium, slow rotations)
+    @State private var outerRingRotation: Double = 0
+    @State private var middleRingRotation: Double = 0
+    @State private var innerRingRotation: Double = 0
+
+    // Glow and breathing effects
+    @State private var glowPhase: Double = 0
+    @State private var breatheScale: CGFloat = 1.0
+    @State private var glowOpacity: Double = 0.4
+
+    // Subtle opacity breathing for intelligence effect
+    @State private var centerOpacity: Double = 1.0
 
     var body: some View {
         ZStack {
-            // Pulse ring
+            // Multi-layer ambient glow (breathing bloom effect)
             if spinning {
+                // Outer bloom layer
                 Circle()
-                    .stroke(CipherTheme.accent.opacity(pulse ? 0.0 : 0.3), lineWidth: 1.5)
-                    .frame(width: size + 8, height: size + 8)
-                    .scaleEffect(pulse ? 1.4 : 1.0)
+                    .fill(CipherTheme.accent.opacity(0.08))
+                    .frame(width: size + 20, height: size + 20)
+                    .blur(radius: 12)
+                    .scaleEffect(breatheScale + 0.15)
+                    .opacity(glowOpacity * 0.6)
+
+                // Middle bloom layer
+                Circle()
+                    .fill(CipherTheme.accent.opacity(0.12))
+                    .frame(width: size + 14, height: size + 14)
+                    .blur(radius: 8)
+                    .scaleEffect(breatheScale + 0.08)
+                    .opacity(glowOpacity * 0.8)
             }
 
-            // Background circle
+            // Central background circle (subtle gradient)
             Circle()
-                .fill(CipherTheme.accentGradient)
-                .frame(width: size, height: size)
-                .shadow(color: CipherTheme.accent.opacity(0.3), radius: 6, y: 2)
+                .fill(
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            CipherTheme.accent.opacity(0.2),
+                            CipherTheme.accent.opacity(0.05)
+                        ]),
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size * 0.6
+                    )
+                )
+                .frame(width: size + 4, height: size + 4)
+                .shadow(color: CipherTheme.accent.opacity(0.25), radius: 8, x: 0, y: 2)
 
-            // Spinning orbit arcs
+            // Premium multi-ring orrery effect
             ZStack {
+                // OUTER RING - Fastest rotation (full orbit every 2.2s)
                 Circle()
-                    .trim(from: 0, to: 0.3)
-                    .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: size * 0.04, lineCap: .round))
-                    .frame(width: size * 0.75, height: size * 0.75)
-                    .rotationEffect(.degrees(rotation))
+                    .trim(from: 0, to: 0.25)
+                    .stroke(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.7),
+                                Color.white.opacity(0.3)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: size * 0.032, lineCap: .round)
+                    )
+                    .frame(width: size * 0.8, height: size * 0.8)
+                    .rotationEffect(.degrees(outerRingRotation))
+                    .opacity(0.85)
 
+                // MIDDLE RING - Medium rotation, opposite direction (full orbit every 3.5s)
                 Circle()
-                    .trim(from: 0.5, to: 0.75)
-                    .stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: size * 0.035, lineCap: .round))
-                    .frame(width: size * 0.55, height: size * 0.55)
-                    .rotationEffect(.degrees(-rotation * 0.6))
+                    .trim(from: 0.35, to: 0.65)
+                    .stroke(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.5),
+                                Color.white.opacity(0.2)
+                            ]),
+                            startPoint: .bottomLeading,
+                            endPoint: .topTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: size * 0.028, lineCap: .round)
+                    )
+                    .frame(width: size * 0.62, height: size * 0.62)
+                    .rotationEffect(.degrees(-middleRingRotation * 0.75))
+                    .opacity(0.7)
+
+                // INNER RING - Slow rotation, same direction as outer (full orbit every 4.8s)
+                Circle()
+                    .trim(from: 0.1, to: 0.35)
+                    .stroke(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.4),
+                                Color.white.opacity(0.15)
+                            ]),
+                            startPoint: .topTrailing,
+                            endPoint: .bottomLeading
+                        ),
+                        style: StrokeStyle(lineWidth: size * 0.024, lineCap: .round)
+                    )
+                    .frame(width: size * 0.45, height: size * 0.45)
+                    .rotationEffect(.degrees(innerRingRotation * 0.55))
+                    .opacity(0.6)
             }
+            .scaleEffect(breatheScale)
 
-            // Central shield
+            // Central shield (stable, breathing slightly)
             CipherShieldShape()
-                .fill(Color.white)
-                .frame(width: size * 0.3, height: size * 0.36)
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color.white,
+                            Color.white.opacity(0.95)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size * 0.32, height: size * 0.38)
+                .scaleEffect(breatheScale * 0.98 + 0.02)
+                .opacity(centerOpacity)
 
-            // Inner eye
-            Circle()
-                .fill(CipherTheme.accent)
-                .frame(width: size * 0.07, height: size * 0.07)
-                .offset(y: -size * 0.015)
+            // Inner eye - glowing indicator (pulsing intelligence)
+            ZStack {
+                // Subtle glow around the eye
+                Circle()
+                    .fill(CipherTheme.accent.opacity(glowOpacity * 0.5))
+                    .frame(width: size * 0.12, height: size * 0.12)
+                    .blur(radius: 2)
+
+                // Main eye
+                Circle()
+                    .fill(CipherTheme.accent)
+                    .frame(width: size * 0.075, height: size * 0.075)
+            }
+            .offset(y: -size * 0.02)
+            .opacity(centerOpacity)
         }
-        .frame(width: size + 10, height: size + 10)
+        .frame(width: size + 12, height: size + 12)
         .onAppear {
-            startAnimations()
+            startPremiumAnimations()
         }
         .onChange(of: spinning) { _, newValue in
             if newValue {
-                startAnimations()
+                startPremiumAnimations()
             }
         }
     }
 
-    private func startAnimations() {
+    private func startPremiumAnimations() {
         guard spinning else { return }
-        withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-            rotation = 360
+
+        // Outer ring - smooth, fast rotation (2.2s full rotation)
+        withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
+            outerRingRotation = 360
         }
-        withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
-            pulse = true
+
+        // Middle ring - medium speed, opposite direction (3.5s full rotation)
+        withAnimation(.linear(duration: 3.5).repeatForever(autoreverses: false)) {
+            middleRingRotation = 360
+        }
+
+        // Inner ring - slow, subtle rotation (4.8s full rotation)
+        withAnimation(.linear(duration: 4.8).repeatForever(autoreverses: false)) {
+            innerRingRotation = 360
+        }
+
+        // Breathing scale effect - subtle expansion/contraction
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            breatheScale = 1.05
+        }
+
+        // Pulsing glow intensity - creates living AI sensation
+        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+            glowOpacity = 0.7
+        }
+
+        // Subtle opacity breathing on center (feeling of thinking)
+        withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+            centerOpacity = 0.92
         }
     }
 }

@@ -24,7 +24,7 @@ from app.models.schemas import (
 )
 from app.services.orchestrator import process_chat
 from app.services.llm_router import stream_completion
-from app.services.orchestrator import CIPHER_SYSTEM_PROMPT
+from app.core.system_prompt import get_system_prompt_for_mode, CIPHER_SYSTEM_PROMPT
 from app.gateway.auth import optional_api_key, GatewayAuth, record_usage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
