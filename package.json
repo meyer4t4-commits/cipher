@@ -1,0 +1,23 @@
+{
+  "name": "orchid",
+  "version": "1.0.0",
+  "description": "**Sovereign AI Intelligence Daemon by Elysian Protocol**",
+  "main": "create_forge_deck.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meyer4t4-commits/orchid.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/meyer4t4-commits/orchid/issues"
+  },
+  "homepage": "https://github.com/meyer4t4-commits/orchid#readme"
+}

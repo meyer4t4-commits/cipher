@@ -16,10 +16,10 @@ class ChatViewModel {
     var showVoiceMode = false
     var selectedSuggestion: String?
 
-    private let api = OrchidAPI.shared
-    private let haptics = HapticsService.shared
-    private let storage = ConversationStorage.shared
-    private var currentStreamTask: Task<Void, Never>?
+    @ObservationIgnored let api = OrchidAPI.shared
+    @ObservationIgnored let haptics = HapticsService.shared
+    @ObservationIgnored let storage = ConversationStorage.shared
+    @ObservationIgnored var currentStreamTask: Task<Void, Never>?
 
     // MARK: - Settings
 
@@ -117,11 +117,11 @@ class ChatViewModel {
                 conversationId: response.conversationId,
                 content: response.message,
                 role: .assistant,
+                timestamp: response.timestamp,
                 status: .delivered,
                 modelUsed: response.modelUsed,
                 tokensUsed: response.tokensUsed,
-                costUsd: response.costUsd,
-                timestamp: response.timestamp
+                costUsd: response.costUsd
             )
 
             currentConversation.id = response.conversationId
@@ -201,6 +201,7 @@ class ChatViewModel {
                     conversationId: finalConversationId ?? currentConversation.id,
                     content: fullContent,
                     role: .assistant,
+                    timestamp: Date(),
                     status: .delivered,
                     modelUsed: finalModel,
                     tokensUsed: finalTokens,

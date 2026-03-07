@@ -145,7 +145,7 @@ struct MessageBubble: View {
 
     private var metadataRow: some View {
         HStack(spacing: Spacing.sm) {
-            if let model = message.modelUsed {
+            if message.modelUsed != nil {
                 HStack(spacing: 3) {
                     Image(systemName: "cpu")
                         .font(.system(size: 9))

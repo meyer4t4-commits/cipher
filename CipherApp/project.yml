@@ -26,13 +26,7 @@ targets:
       PRODUCT_NAME: Cipher
       PRODUCT_BUNDLE_IDENTIFIER: io.elysianprotocol.cipher
       INFOPLIST_FILE: CipherApp/Info.plist
-      INFOPLIST_KEY_UIUserInterfaceStyle: Dark
-      INFOPLIST_KEY_NSMicrophoneUsageDescription: "Cipher uses your microphone for voice conversations"
-      INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Cipher lets you share images for analysis"
-      INFOPLIST_KEY_NSCameraUsageDescription: "Cipher lets you capture images for analysis"
-      INFOPLIST_KEY_NSFaceIDUsageDescription: "Cipher uses Face ID to protect your conversations"
-      INFOPLIST_KEY_UIApplicationSceneManifest:
-        UIApplicationSupportsMultipleScenes: true
+      GENERATE_INFOPLIST_FILE: NO
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: ""
       ENABLE_PREVIEWS: true

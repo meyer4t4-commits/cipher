@@ -33,14 +33,15 @@ class VoiceService {
         }
     }
 
-    private var audioEngine: AVAudioEngine?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    @ObservationIgnored var audioEngine: AVAudioEngine?
+    @ObservationIgnored var recognitionTask: SFSpeechRecognitionTask?
+    @ObservationIgnored var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    @ObservationIgnored let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
 
-    private var audioPlayer: AVAudioPlayer?
+    @ObservationIgnored var audioPlayer: AVAudioPlayer?
+    @ObservationIgnored var playerDelegate: AudioPlayerDelegateHandler?
 
-    private init() {}
+    init() {}
 
     // MARK: - Authorization
 
@@ -94,7 +95,6 @@ class VoiceService {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
 
-            // Calculate audio level for visualization
             let channelData = buffer.floatChannelData?[0]
             let frameLength = Int(buffer.frameLength)
             if let data = channelData {
@@ -189,8 +189,13 @@ class VoiceService {
             try audioSession.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
             try audioSession.setActive(true)
 
-            audioPlayer = try AVAudioPlayer(data: audioData, fileTypeHint: .mp3)
-            audioPlayer?.delegate = self
+            audioPlayer = try AVAudioPlayer(data: audioData, fileTypeHint: "public.mp3")
+            playerDelegate = AudioPlayerDelegateHandler { [weak self] in
+                DispatchQueue.main.async {
+                    self?.isPlayingResponse = false
+                }
+            }
+            audioPlayer?.delegate = playerDelegate
             isPlayingResponse = true
             audioPlayer?.play()
         } catch {
@@ -206,18 +211,21 @@ class VoiceService {
     }
 }
 
-// MARK: - AVAudioPlayerDelegate
+// MARK: - Audio Player Delegate Handler
 
-extension VoiceService: AVAudioPlayerDelegate {
+class AudioPlayerDelegateHandler: NSObject, AVAudioPlayerDelegate {
+    let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+        super.init()
+    }
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        DispatchQueue.main.async {
-            self.isPlayingResponse = false
-        }
+        onFinish()
     }
 
     func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        DispatchQueue.main.async {
-            self.isPlayingResponse = false
-        }
+        onFinish()
     }
 }

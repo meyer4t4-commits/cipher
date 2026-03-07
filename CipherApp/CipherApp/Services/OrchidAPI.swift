@@ -59,9 +59,9 @@ class OrchidAPI {
     var lastHealthCheck: Date?
     var latencyMs: Int?
 
-    private let session: URLSession
-    private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
+    @ObservationIgnored let session: URLSession
+    @ObservationIgnored let decoder: JSONDecoder
+    @ObservationIgnored let encoder: JSONEncoder
 
     init() {
         let config = URLSessionConfiguration.default

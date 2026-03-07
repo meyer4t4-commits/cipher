@@ -43,11 +43,11 @@ class AppState {
 
     var phase: Phase = .splash
 
-    private var hasCompletedOnboarding: Bool {
+    var hasCompletedOnboarding: Bool {
         UserDefaults.standard.bool(forKey: "has_completed_onboarding")
     }
 
-    private var biometricEnabled: Bool {
+    var biometricEnabled: Bool {
         UserDefaults.standard.bool(forKey: "biometric_enabled")
     }
 
