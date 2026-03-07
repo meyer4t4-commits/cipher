@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.api import chat, memory, models, system, scanner, voice
+from app.api import agents, chat, memory, models, system, scanner, voice
 from app.gateway.api import router as gateway_router
 from app.gateway.premium_routes import availability_router
 import os
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Default model: {settings.default_model}")
     os.environ['ANTHROPIC_API_KEY'] = settings.anthropic_api_key
     os.environ['GROQ_API_KEY'] = settings.groq_api_key
+    os.environ['OPENAI_API_KEY'] = settings.openai_api_key
     os.environ['DEEPSEEK_API_KEY'] = settings.deepseek_api_key
 
     # Export ElevenLabs API key if configured
@@ -91,6 +92,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(agents.router)
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(memory.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
