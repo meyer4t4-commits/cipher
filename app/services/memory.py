@@ -2,11 +2,15 @@
 Memory Service - Cipher's persistent context layer.
 Uses a local JSON-backed store for memory persistence.
 
+On Railway (or any env where the filesystem is read-only), automatically
+falls back to in-memory storage so the app never crashes on write attempts.
+
 Phase 1: Simple keyword-matching memory (Python 3.14 compatible).
 Phase 2: Will upgrade to ChromaDB when Python 3.14 support lands.
 """
 
 import json
+import os
 import uuid
 from pathlib import Path
 from difflib import SequenceMatcher
@@ -14,13 +18,33 @@ from difflib import SequenceMatcher
 from app.core.config import settings
 from app.core.logging import logger
 
-memory_dir = Path(settings.chroma_persist_dir)
-memory_dir.mkdir(parents=True, exist_ok=True)
-MEMORY_FILE = memory_dir / "cipher_memory.json"
+# --- Determine if we can write to disk ---
+_in_memory_mode = False
+_in_memory_store: dict = {}  # Fallback store when filesystem is unavailable
+MEMORY_FILE = None
+
+try:
+    memory_dir = Path(settings.chroma_persist_dir)
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    # Test write access
+    _test_file = memory_dir / ".write_test"
+    _test_file.write_text("ok")
+    _test_file.unlink()
+    MEMORY_FILE = memory_dir / "cipher_memory.json"
+    logger.info(f"Memory store: file-backed at {MEMORY_FILE}")
+except Exception:
+    _in_memory_mode = True
+    logger.warning(
+        "Memory store: in-memory mode (filesystem not writable). "
+        "Memory will not persist across restarts."
+    )
 
 
 def _load_store() -> dict:
-    if MEMORY_FILE.exists():
+    if _in_memory_mode:
+        return _in_memory_store
+
+    if MEMORY_FILE and MEMORY_FILE.exists():
         try:
             return json.loads(MEMORY_FILE.read_text())
         except Exception as e:
@@ -29,10 +53,19 @@ def _load_store() -> dict:
 
 
 def _save_store(store: dict) -> None:
+    if _in_memory_mode:
+        global _in_memory_store
+        _in_memory_store = store
+        return
+
     try:
-        MEMORY_FILE.write_text(json.dumps(store, indent=2, default=str))
+        if MEMORY_FILE:
+            MEMORY_FILE.write_text(json.dumps(store, indent=2, default=str))
     except Exception as e:
-        logger.error(f"Failed to save memory store: {e}")
+        logger.warning(f"Memory file write failed, switching to in-memory: {e}")
+        # Degrade gracefully to in-memory for the rest of this process
+        globals()["_in_memory_mode"] = True
+        globals()["_in_memory_store"] = store
 
 
 def _relevance_score(query: str, document: str) -> float:

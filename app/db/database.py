@@ -32,10 +32,24 @@ if _is_postgres:
         echo=settings.app_debug,
     )
 else:
-    # Local SQLite — ensure data directory exists
+    # SQLite mode — check if we can actually write to the target path
     database_url = _raw_url
-    db_path = database_url.replace("sqlite:///", "")
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    _on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_ID"))
+    _use_memory_db = False
+
+    if _on_railway:
+        # Railway's filesystem is ephemeral/read-only for data dirs.
+        # Use in-memory SQLite so the app runs (tables exist, just no persistence).
+        # To persist data on Railway, set DATABASE_URL to a PostgreSQL connection string.
+        database_url = "sqlite://"  # in-memory
+        _use_memory_db = True
+    else:
+        db_path = database_url.replace("sqlite:///", "")
+        try:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            database_url = "sqlite://"
+            _use_memory_db = True
 
     engine = create_engine(
         database_url,
@@ -43,14 +57,22 @@ else:
         echo=settings.app_debug,
     )
 
-    # SQLite performance pragmas — only for SQLite
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+    if _use_memory_db:
+        from app.core.logging import logger as _db_logger
+        _db_logger.warning(
+            "Using in-memory SQLite (no persistence). "
+            "Set DATABASE_URL to a PostgreSQL connection string for persistent storage."
+        )
+
+    # SQLite performance pragmas — only for file-based SQLite
+    if not _use_memory_db:
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
