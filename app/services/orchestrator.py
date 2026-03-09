@@ -316,7 +316,11 @@ async def process_chat(
 
     # 1. Load or create conversation
     conversation_id = request.conversation_id or str(uuid.uuid4())
-    conversation = db.query(ConversationRecord).filter_by(id=conversation_id).first()
+    try:
+        conversation = db.query(ConversationRecord).filter_by(id=conversation_id).first()
+    except Exception as e:
+        logger.warning(f"DB read failed (non-fatal): {e}")
+        conversation = None
 
     # Auto-classify if using AUTO tier
     model_tier = request.model_tier
@@ -331,8 +335,15 @@ async def process_chat(
             id=conversation_id,
             model_tier=model_tier.value,
         )
-        db.add(conversation)
-        db.flush()
+        try:
+            db.add(conversation)
+            db.flush()
+        except Exception as e:
+            logger.warning(f"DB write failed (non-fatal): {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
     # 2. DETECT DATA QUERIES — do we need live data before LLM responds?
     normalized_message = _normalize_for_matching(request.message)
@@ -602,26 +613,33 @@ async def process_chat(
         tokens_used=result["total_tokens"],
         cost_usd=result["cost_usd"],
     )
-    db.add_all([user_msg, assistant_msg])
+    try:
+        db.add_all([user_msg, assistant_msg])
 
-    # Update conversation
-    conversation.updated_at = datetime.now(timezone.utc)
-    if not conversation.title and len(request.message) > 0:
-        conversation.title = request.message[:100]
+        # Update conversation
+        conversation.updated_at = datetime.now(timezone.utc)
+        if not conversation.title and len(request.message) > 0:
+            conversation.title = request.message[:100]
 
-    # Log usage
-    usage_log = UsageLog(
-        model=result["model_used"],
-        provider=result["provider"],
-        input_tokens=result.get("input_tokens", 0),
-        output_tokens=result.get("output_tokens", 0),
-        total_tokens=result["total_tokens"],
-        cost_usd=result["cost_usd"],
-        latency_ms=result["latency_ms"],
-        task_type=model_tier.value,
-    )
-    db.add(usage_log)
-    db.commit()
+        # Log usage
+        usage_log = UsageLog(
+            model=result["model_used"],
+            provider=result["provider"],
+            input_tokens=result.get("input_tokens", 0),
+            output_tokens=result.get("output_tokens", 0),
+            total_tokens=result["total_tokens"],
+            cost_usd=result["cost_usd"],
+            latency_ms=result["latency_ms"],
+            task_type=model_tier.value,
+        )
+        db.add(usage_log)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"DB persist failed (non-fatal, chat still works): {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     # Store in long-term memory
     try:

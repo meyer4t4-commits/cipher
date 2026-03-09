@@ -14,7 +14,6 @@ tiktoken>=0.8.0
 # Database
 sqlalchemy>=2.0.36
 alembic>=1.14.0
-chromadb>=0.5.23
 psycopg2-binary>=2.9.9
 
 # Auth & Security
@@ -28,9 +27,6 @@ aiohttp>=3.9.0
 
 # Web scraping
 beautifulsoup4>=4.12.0
-
-# Browser automation (universal scraper — replaces paid APIs)
-playwright>=1.49.0
 
 # Telegram
 python-telegram-bot>=21.9

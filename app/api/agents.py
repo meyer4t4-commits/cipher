@@ -21,37 +21,6 @@ from app.agents import (
     get_executor,
     get_registry,
 )
-from app.agents.skills import (
-    AnalystAgent,
-    ApexArchitectAgent,
-    ArchivistAgent,
-    BraveSearchAgent,
-    ChronosAgent,
-    CommunicationAgent,
-    CodeAgent,
-    DataAgent,
-    DealFlowAgent,
-    DeployAgent,
-    FileAgent,
-    ImageAgent,
-    LegalAgent,
-    MarketPulseAgent,
-    MonitorAgent,
-    NeighborhoodGrowthAgent,
-    OutreachAgent,
-    ProfitabilityAnalystAgent,
-    ProvisioningAgent,
-    ResearchAgent,
-    SchedulerAgent,
-    ScoutAgent,
-    SentinelAgent,
-    ShellAgent,
-    SkillCreatorAgent,
-    SynthesisAgent,
-    TradingAgent,
-    VideoAgent,
-    WebAgent,
-)
 from app.core.logging import logger
 from app.db.database import get_db
 
@@ -62,12 +31,45 @@ _agents_initialized = False
 
 
 def _init_agents():
-    """Initialize and register all agents."""
+    """Initialize and register all agents. Imports are deferred to reduce startup memory."""
     global _agents_initialized
     if _agents_initialized:
         return
 
     registry = get_registry()
+
+    # Lazy import — only load agent classes when first needed (saves ~100MB at startup)
+    from app.agents.skills import (
+        AnalystAgent,
+        ApexArchitectAgent,
+        ArchivistAgent,
+        BraveSearchAgent,
+        ChronosAgent,
+        CommunicationAgent,
+        CodeAgent,
+        DataAgent,
+        DealFlowAgent,
+        DeployAgent,
+        FileAgent,
+        ImageAgent,
+        LegalAgent,
+        MarketPulseAgent,
+        MonitorAgent,
+        NeighborhoodGrowthAgent,
+        OutreachAgent,
+        ProfitabilityAnalystAgent,
+        ProvisioningAgent,
+        ResearchAgent,
+        SchedulerAgent,
+        ScoutAgent,
+        SentinelAgent,
+        ShellAgent,
+        SkillCreatorAgent,
+        SynthesisAgent,
+        TradingAgent,
+        VideoAgent,
+        WebAgent,
+    )
 
     # Register all skill agents
     agents = [
@@ -113,10 +115,7 @@ def _init_agents():
     logger.info(f"Agent framework initialized with {len(agents)} agents")
 
 
-@router.on_event("startup")
-async def startup_event():
-    """Initialize agents on startup."""
-    _init_agents()
+# Agents are lazy-loaded on first API call (not at startup) to reduce memory
 
 
 @router.post("/execute", response_model=AgentResult)
