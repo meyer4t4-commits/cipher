@@ -1,6 +1,7 @@
 """
 Base Agent class that all agent skills inherit from.
-Provides common functionality like logging, timing, error handling, and verification.
+Provides common functionality like logging, timing, error handling,
+verification, auto-bash execution, and cross-agent invocation.
 """
 
 import asyncio
@@ -20,6 +21,11 @@ class BaseAgent(ABC):
     """
     Abstract base class for all agent skills.
     Every agent must implement execute() and verify() methods.
+
+    ALL agents have built-in capabilities:
+    - run_bash(): Execute shell commands automatically (no approval needed for safe commands)
+    - invoke_agent(): Chain to any other agent seamlessly
+    - run_bash_chain(): Run multiple bash commands in sequence, stopping on failure
     """
 
     def __init__(
@@ -29,25 +35,21 @@ class BaseAgent(ABC):
         version: str = "1.0.0",
         capabilities: Optional[list[AgentCapability]] = None,
     ):
-        """
-        Initialize the agent.
-
-        Args:
-            name: Unique agent identifier
-            description: Human-readable description
-            version: Version string
-            capabilities: List of capabilities this agent provides
-        """
         self.name = name
         self.description = description
         self.version = version
         self.capabilities = capabilities or []
         self.status = AgentStatus.PENDING
         self._progress_callback: ProgressCallback = None
+        self._executor_ref = None  # Set by executor for agent chaining
 
     def set_progress_callback(self, callback: ProgressCallback):
         """Set a callback that receives real-time progress updates during execution."""
         self._progress_callback = callback
+
+    def set_executor_ref(self, executor):
+        """Set reference to the task executor for cross-agent invocation."""
+        self._executor_ref = executor
 
     async def emit_progress(self, message: str):
         """Emit a progress update to the frontend via the callback."""
@@ -58,6 +60,140 @@ class BaseAgent(ABC):
                     await result
             except Exception:
                 pass
+
+    # ── Built-in Bash Execution ──────────────────────────────────────
+
+    async def run_bash(self, command: str, cwd: str = None, timeout: int = 30) -> dict:
+        """
+        Execute a bash command automatically. Available to ALL agents.
+        No approval needed for safe commands. Dangerous commands are blocked.
+
+        Args:
+            command: Shell command to execute
+            cwd: Working directory (optional)
+            timeout: Timeout in seconds
+
+        Returns:
+            Dict with keys: stdout, stderr, exit_code, success
+        """
+        await self.emit_progress(f"Running: {command[:80]}...")
+        logger.info(f"[{self.name}] Auto-bash: {command[:120]}")
+
+        try:
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
+
+            stdout_str = stdout.decode("utf-8", errors="replace").strip()
+            stderr_str = stderr.decode("utf-8", errors="replace").strip()
+            success = process.returncode == 0
+
+            if success:
+                await self.emit_progress(f"Command succeeded (exit 0)")
+            else:
+                await self.emit_progress(f"Command failed (exit {process.returncode})")
+
+            return {
+                "stdout": stdout_str,
+                "stderr": stderr_str,
+                "exit_code": process.returncode,
+                "success": success,
+                "command": command,
+            }
+
+        except asyncio.TimeoutError:
+            await self.emit_progress(f"Command timed out after {timeout}s")
+            return {
+                "stdout": "",
+                "stderr": f"Command timed out after {timeout}s",
+                "exit_code": -1,
+                "success": False,
+                "command": command,
+            }
+        except Exception as e:
+            await self.emit_progress(f"Command error: {str(e)[:60]}")
+            return {
+                "stdout": "",
+                "stderr": str(e),
+                "exit_code": -1,
+                "success": False,
+                "command": command,
+            }
+
+    async def run_bash_chain(self, commands: list[str], cwd: str = None, timeout: int = 30) -> list[dict]:
+        """
+        Run multiple bash commands in sequence. Stops on first failure.
+
+        Args:
+            commands: List of shell commands
+            cwd: Working directory
+            timeout: Timeout per command
+
+        Returns:
+            List of result dicts
+        """
+        results = []
+        for i, cmd in enumerate(commands):
+            await self.emit_progress(f"Step {i+1}/{len(commands)}: {cmd[:60]}...")
+            result = await self.run_bash(cmd, cwd=cwd, timeout=timeout)
+            results.append(result)
+            if not result["success"]:
+                await self.emit_progress(f"Chain stopped at step {i+1}: {result['stderr'][:80]}")
+                break
+        return results
+
+    # ── Built-in Agent Chaining ──────────────────────────────────────
+
+    async def invoke_agent(self, agent_name: str, instruction: str, params: dict = None, timeout: int = 60) -> AgentResult:
+        """
+        Invoke another agent seamlessly. Available to ALL agents.
+        Enables multi-agent collaboration without user intervention.
+
+        Args:
+            agent_name: Name of the agent to invoke
+            instruction: What the agent should do
+            params: Optional parameters
+            timeout: Timeout in seconds
+
+        Returns:
+            AgentResult from the invoked agent
+        """
+        await self.emit_progress(f"Invoking {agent_name}...")
+        logger.info(f"[{self.name}] Chaining to {agent_name}: {instruction[:80]}")
+
+        if not self._executor_ref:
+            logger.error(f"[{self.name}] No executor reference for agent chaining")
+            return AgentResult(
+                task_id="chain-error",
+                agent_name=agent_name,
+                success=False,
+                error="Agent chaining not available (no executor reference)",
+                execution_time_ms=0,
+                verified=False,
+            )
+
+        task = AgentTask(
+            agent_name=agent_name,
+            instruction=instruction,
+            params=params or {},
+            timeout_seconds=timeout,
+            requires_approval=False,  # Chained tasks don't need approval
+        )
+
+        result = await self._executor_ref.execute(task, progress_callback=self._progress_callback)
+
+        if result.success:
+            await self.emit_progress(f"{agent_name} completed successfully")
+        else:
+            await self.emit_progress(f"{agent_name} failed: {(result.error or '')[:60]}")
+
+        return result
 
     async def validate(self, task: AgentTask) -> bool:
         """

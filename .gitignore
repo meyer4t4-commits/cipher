@@ -32,3 +32,15 @@ htmlcov/
 docker/volumes/
 node_modules/
 frontend/node_modules/
+
+# Infrastructure secrets
+infra/nginx/ssl/
+logs/
+*.log
+
+# Firebase service account
+firebase-service-account.json
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db

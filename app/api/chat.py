@@ -6,9 +6,10 @@ Supports both free (local) and premium (Elysian Gateway) modes:
 - With Elysian API key: uses managed infrastructure with metering
 """
 
+import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,37 @@ from app.core.system_prompt import get_system_prompt_for_mode, CIPHER_SYSTEM_PRO
 from app.gateway.auth import optional_api_key, GatewayAuth, record_usage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+@router.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    """
+    Upload an image for inclusion in chat. Returns base64-encoded data.
+    Validates format (JPEG/PNG/WebP/GIF) and size (max 5MB).
+    """
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type: {file.content_type}. Supported: JPEG, PNG, WebP, GIF"
+        )
+
+    data = await file.read()
+    if len(data) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large ({len(data) / 1024 / 1024:.1f}MB). Max: 5MB"
+        )
+
+    b64 = base64.b64encode(data).decode("utf-8")
+    return {
+        "base64": b64,
+        "mime_type": file.content_type,
+        "size_bytes": len(data),
+        "filename": file.filename,
+    }
 
 
 @router.post("/", response_model=ChatResponse)
@@ -75,33 +107,66 @@ async def send_message(
 async def stream_message(request: ChatRequest, db: Session = Depends(get_db)):
     """
     Stream a response from Cipher token by token.
-    Uses Server-Sent Events (SSE) for real-time streaming.
+    Sends keepalive pings while the orchestrator processes so iOS doesn't timeout.
     """
-    # Build messages from conversation history
-    messages = []
-    if request.conversation_id:
-        history = (
-            db.query(MessageRecord)
-            .filter_by(conversation_id=request.conversation_id)
-            .order_by(MessageRecord.created_at)
-            .limit(50)
-            .all()
-        )
-        for msg in history:
-            messages.append({"role": msg.role, "content": msg.content})
-
-    messages.append({"role": "user", "content": request.message})
+    import json as _json
+    import asyncio
 
     async def event_generator():
-        async for chunk in stream_completion(
-            messages=messages,
-            model_tier=request.model_tier,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            system_prompt=request.system_prompt or CIPHER_SYSTEM_PROMPT,
-        ):
-            yield f"data: {chunk}\n\n"
-        yield "data: [DONE]\n\n"
+        try:
+            # Send heartbeat IMMEDIATELY so iOS knows we're alive
+            yield f"data: {_json.dumps({'type': 'token', 'content': ''})}\n\n"
+
+            # Run orchestrator in background, send keepalives every 5s
+            chat_task = asyncio.create_task(process_chat(request, db))
+
+            while not chat_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(chat_task), timeout=5.0)
+                except asyncio.TimeoutError:
+                    # Still processing — keepalive so connection stays open
+                    yield f"data: {_json.dumps({'type': 'token', 'content': ''})}\n\n"
+
+            response = chat_task.result()
+
+            # Stream the response in small chunks for smooth word-by-word
+            content = response.message or ""
+
+            # BLANK MESSAGE GUARD: If the orchestrator returned empty content,
+            # send a meaningful fallback so iOS never shows a blank bubble
+            if not content.strip():
+                content = (
+                    "Something went wrong generating a response. "
+                    "This could be a temporary API issue — try again in a moment, "
+                    "or switch to a different model tier."
+                )
+
+            chunk_size = 3
+            for i in range(0, len(content), chunk_size):
+                chunk = content[i:i + chunk_size]
+                yield f"data: {_json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                await asyncio.sleep(0.01)
+
+            # Metadata at end
+            yield f"data: {_json.dumps({'type': 'metadata', 'model_used': response.model_used or 'unknown', 'tokens_used': response.tokens_used or 0, 'cost_usd': response.cost_usd or 0.0, 'conversation_id': response.conversation_id or ''})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            import traceback
+            error_detail = str(e)[:500]
+            # Log full traceback server-side
+            try:
+                from app.core.logging import logger
+                logger.error(f"Stream error: {traceback.format_exc()}")
+            except Exception:
+                pass
+            # Send user-friendly error content as actual tokens (not error type)
+            # so iOS renders it as a message instead of failing silently
+            fallback = f"Hit an error processing your message: {error_detail[:200]}. Try again or switch model tiers."
+            for i in range(0, len(fallback), 3):
+                yield f"data: {_json.dumps({'type': 'token', 'content': fallback[i:i+3]})}\n\n"
+            yield f"data: {_json.dumps({'type': 'metadata', 'model_used': 'error', 'tokens_used': 0, 'cost_usd': 0.0, 'conversation_id': ''})}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

@@ -13,7 +13,7 @@ class DashboardViewModel {
     var isLoading = false
     var errorMessage: String?
 
-    @ObservationIgnored let api = OrchidAPI.shared
+    @ObservationIgnored let api = CipherAPI.shared
 
     func loadAll() async {
         isLoading = true

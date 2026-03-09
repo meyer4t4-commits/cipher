@@ -1,13 +1,29 @@
 """
 Intelligent message classifier for auto-routing to optimal model tier.
-Analyzes message content and returns the best ModelTier with confidence score.
+
+PHILOSOPHY: Default to the BEST model (DEFAULT tier = Claude Sonnet).
+Only route to FAST tier for truly trivial queries where speed matters more than depth.
+Only route to CODE/REASONING for queries that specifically need those capabilities.
+
+The old classifier sent most messages to FAST (Llama) because:
+- Short messages (<30 chars) → FAST
+- Simple question patterns → FAST
+- Any "what/when/where" question → FAST
+
+The NEW classifier defaults to DEFAULT (Claude) for anything that isn't
+obviously trivial, because quality matters more than saving a few cents.
 """
 
 import re
 from typing import Tuple
 from app.models.schemas import ModelTier
 
-# Keywords for CODE tier routing
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TIER KEYWORDS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Keywords that STRONGLY indicate code tasks
 CODE_KEYWORDS = {
     "write", "build", "debug", "fix", "function", "class", "api", "script",
     "code", "implement", "deploy", "docker", "git", "sql", "python", "javascript",
@@ -19,46 +35,43 @@ CODE_KEYWORDS = {
     "await", "promise", "callback", "middleware", "cache", "queue", "stream",
     "pagination", "authentication", "authorization", "encryption", "hash",
     "validate", "serialize", "deserialize", "schema", "type", "interface",
+    "swift", "swiftui", "fastapi", "react", "typescript", "rust", "golang",
+    "nginx", "dockerfile", "cicd", "pipeline", "server", "backend", "frontend",
 }
 
-# Keywords for REASONING tier routing
+# Keywords that indicate deep reasoning/analysis tasks
 REASONING_KEYWORDS = {
     "analyze", "compare", "evaluate", "pros", "cons", "trade-off", "tradeoff",
     "strategy", "should i", "which is better", "explain why", "break down",
     "assess", "investigate", "research", "implications", "long-term",
     "architecture", "design decision", "pattern", "approach", "methodology",
-    "framework", "model", "theory", "concept", "principle", "hypothesis",
-    "problem-solve", "problem solve", "critical thinking", "reason", "logic",
+    "theory", "concept", "principle", "hypothesis", "critical thinking",
     "contradict", "validate", "verify", "argue", "debate", "perspective",
-    "considering", "alternative", "option", "scenario", "outcome", "consequence",
+    "considering", "alternative", "scenario", "outcome", "consequence",
     "impact", "risk", "opportunity", "prioritize", "weigh", "decision",
-    "recommendation", "insight", "understanding", "interpretation", "analysis",
+    "recommendation", "insight", "interpretation", "deep dive",
+    "financial model", "valuation", "due diligence", "legal", "contract",
+    "negotiate", "business plan", "market analysis", "competitor analysis",
 }
 
-# Keywords for simple/quick responses (FAST tier)
-SIMPLE_KEYWORDS = {
-    "what is", "when did", "how many", "who is", "define", "what time",
-    "yes", "no", "simple", "quick", "brief", "short", "tldr", "summary",
-    "translate", "summarize", "quote", "definition", "fact", "list",
-    "what's", "what are", "how do", "where is", "why did", "difference",
-}
-
-# Patterns for short messages
-SHORT_MESSAGE_THRESHOLD = 30  # characters
-
-# Patterns for queries (simple yes/no or fact retrieval)
-SIMPLE_PATTERNS = [
-    r"^(what|when|where|who|which|how|why)\s",  # Question start
-    r"(is|are)\s[a-z]+\?$",  # Simple statement questions
-    r"^(translate|define|summarize|list)\s",  # Single-word commands
-    r"^\d+\s*[\+\-\*\/]\s*\d+",  # Simple math
+# ONLY truly trivial queries get FAST tier — one-liners with no real depth needed
+TRIVIAL_PATTERNS = [
+    r"^(hi|hey|hello|sup|yo|gm|good morning|good night|thanks|thank you|ok|okay|cool|nice|got it|bet|word)\s*[!.?]*$",
+    r"^what time is it\??$",
+    r"^what('s| is) the date\??$",
+    r"^\d+\s*[\+\-\*\/]\s*\d+\s*=?\s*$",  # Simple math like "5 + 3"
+    r"^(yes|no|yep|nope|sure|nah)\s*[!.?]*$",
 ]
+
+# Very short threshold — only TRULY short messages go to FAST
+TRIVIAL_MESSAGE_THRESHOLD = 15  # characters (was 30 — way too aggressive)
 
 
 class MessageClassifier:
     """
     Classifies user messages to determine optimal model tier.
-    Uses keyword matching and pattern analysis for fast, accurate routing.
+    Quality-first: defaults to DEFAULT (Claude) unless there's a strong signal
+    for CODE, REASONING, or the message is genuinely trivial (FAST).
     """
 
     @staticmethod
@@ -66,91 +79,92 @@ class MessageClassifier:
         """
         Classify a message to the optimal ModelTier.
 
-        Args:
-            message: The user's message to classify
-
         Returns:
-            Tuple of (ModelTier, confidence_score)
-            confidence_score ranges from 0.0 to 1.0
+            Tuple of (ModelTier, confidence_score 0.0-1.0)
         """
         if not message or not isinstance(message, str):
             return ModelTier.DEFAULT, 0.5
 
-        # Normalize message for keyword matching
         normalized = message.lower().strip()
 
-        # Check message length first (very short messages -> FAST)
-        if len(normalized) < SHORT_MESSAGE_THRESHOLD:
+        # ── Trivial messages → FAST (but ONLY truly trivial) ──
+        if len(normalized) < TRIVIAL_MESSAGE_THRESHOLD:
+            if MessageClassifier._is_trivial(normalized):
+                return ModelTier.FAST, 0.90
+            # Short but not trivial (e.g. "fix this bug") → DEFAULT
+            # Fall through to keyword analysis
+
+        # Check if it matches trivial patterns explicitly
+        if MessageClassifier._is_trivial(normalized):
             return ModelTier.FAST, 0.85
 
-        # Check for simple patterns (facts, definitions, simple queries)
-        if MessageClassifier._matches_simple_pattern(normalized):
-            return ModelTier.FAST, 0.80
-
-        # Tokenize for keyword matching
+        # ── Tokenize for keyword matching ──
         words = MessageClassifier._tokenize(normalized)
         word_set = set(words)
+        # Also check 2-grams for multi-word keywords
+        bigrams = set()
+        for i in range(len(words) - 1):
+            bigrams.add(f"{words[i]} {words[i+1]}")
+        all_tokens = word_set | bigrams
 
-        # Check CODE tier keywords
-        code_matches = len(word_set & CODE_KEYWORDS)
-        code_confidence = min(code_matches / 3.0, 1.0)  # Normalize to 0-1
+        # ── Check CODE tier ──
+        code_matches = len(all_tokens & CODE_KEYWORDS)
+        code_confidence = min(code_matches / 2.5, 1.0)
 
-        # Check REASONING tier keywords
-        reasoning_matches = len(word_set & REASONING_KEYWORDS)
-        reasoning_confidence = min(reasoning_matches / 3.0, 1.0)
+        # Strong code signals: code blocks, file paths, error traces
+        if "```" in message or re.search(r'\b\w+\.\w{2,4}\b', message):  # file extensions
+            code_confidence = max(code_confidence, 0.7)
+        if re.search(r'(traceback|error|exception|stack trace)', normalized):
+            code_confidence = max(code_confidence, 0.8)
 
-        # Check SIMPLE tier keywords
-        simple_matches = len(word_set & SIMPLE_KEYWORDS)
-        simple_confidence = min(simple_matches / 2.0, 1.0)
+        # ── Check REASONING tier ──
+        reasoning_matches = len(all_tokens & REASONING_KEYWORDS)
+        reasoning_confidence = min(reasoning_matches / 2.0, 1.0)
 
-        # Determine best tier by confidence
+        # Strong reasoning signals: long complex messages, "should I", comparisons
+        if len(message) > 200 and reasoning_matches >= 2:
+            reasoning_confidence = max(reasoning_confidence, 0.8)
+        if re.search(r'(should i|which is better|pros and cons|compare)', normalized):
+            reasoning_confidence = max(reasoning_confidence, 0.75)
+
+        # ── Decision: highest confidence wins, but DEFAULT is the baseline ──
+        # DEFAULT baseline is 0.6 — CODE/REASONING must beat this to override
         scores = {
             ModelTier.CODE: code_confidence,
             ModelTier.REASONING: reasoning_confidence,
-            ModelTier.FAST: simple_confidence,
-            ModelTier.DEFAULT: 0.5,  # Default baseline
+            ModelTier.DEFAULT: 0.6,  # Strong baseline — Claude is the default brain
         }
 
         best_tier = max(scores, key=scores.get)
         confidence = scores[best_tier]
 
-        # If no strong signal, default to DEFAULT tier
-        if confidence < 0.3:
-            return ModelTier.DEFAULT, 0.6
+        # If no strong specialist signal, default to Claude
+        if confidence < 0.5:
+            return ModelTier.DEFAULT, 0.7
 
         return best_tier, min(confidence, 0.99)
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
-        """
-        Tokenize text into words for keyword matching.
-        Removes punctuation and splits on whitespace and hyphens.
-        """
-        # Remove code blocks and URLs to avoid noise
+        """Tokenize text into words for keyword matching."""
+        # Remove code blocks and URLs
         text = re.sub(r'```[^`]*```', '', text)
         text = re.sub(r'`[^`]*`', '', text)
         text = re.sub(r'https?://\S+', '', text)
-
-        # Split on whitespace, hyphens, and common punctuation
         tokens = re.split(r'[\s\-_.,;:!?\(\)\[\]{}\"\']+', text)
-
-        # Filter empty tokens and keep only non-numeric tokens
         return [t for t in tokens if t and not t.isdigit()]
 
     @staticmethod
-    def _matches_simple_pattern(text: str) -> bool:
-        """Check if text matches patterns for simple/quick responses."""
-        for pattern in SIMPLE_PATTERNS:
+    def _is_trivial(text: str) -> bool:
+        """Check if text is a genuinely trivial message (greeting, yes/no, etc.)."""
+        for pattern in TRIVIAL_PATTERNS:
             if re.match(pattern, text, re.IGNORECASE):
                 return True
         return False
 
     @staticmethod
     def get_classification_details(message: str) -> dict:
-        """
-        Return detailed classification info for debugging/monitoring.
-        Useful for understanding why a tier was selected.
-        """
+        """Return detailed classification info for debugging."""
         tier, confidence = MessageClassifier.classify(message)
 
         normalized = message.lower().strip()
@@ -159,33 +173,30 @@ class MessageClassifier:
 
         code_matches = word_set & CODE_KEYWORDS
         reasoning_matches = word_set & REASONING_KEYWORDS
-        simple_matches = word_set & SIMPLE_KEYWORDS
 
         return {
             "tier": tier.value,
             "confidence": round(confidence, 3),
             "message_length": len(message),
-            "code_keywords_found": list(code_matches)[:5],  # Top 5
+            "code_keywords_found": list(code_matches)[:5],
             "reasoning_keywords_found": list(reasoning_matches)[:5],
-            "simple_keywords_found": list(simple_matches)[:5],
-            "is_short_message": len(normalized) < SHORT_MESSAGE_THRESHOLD,
-            "matches_simple_pattern": MessageClassifier._matches_simple_pattern(normalized),
+            "is_trivial": MessageClassifier._is_trivial(normalized),
+            "would_use_model": None,  # Filled in by caller if needed
         }
 
 
-# Public API - single function for simplicity
+# Public API
 def auto_classify(message: str) -> Tuple[ModelTier, float]:
     """
     Auto-classify a message to the optimal model tier.
 
-    Args:
-        message: The user's message
+    Quality-first: defaults to DEFAULT (Claude Sonnet) unless there's a
+    strong signal for CODE, REASONING, or the message is genuinely trivial.
 
-    Returns:
-        Tuple of (ModelTier, confidence_score)
-
-    Example:
-        tier, confidence = auto_classify("Write me a Python function to sort a list")
-        # Returns (ModelTier.CODE, 0.95)
+    Examples:
+        auto_classify("hi")                    → (FAST, 0.90)
+        auto_classify("what's the weather?")   → (DEFAULT, 0.70)
+        auto_classify("write a Python script") → (CODE, 0.80)
+        auto_classify("compare React vs Vue")  → (REASONING, 0.75)
     """
     return MessageClassifier.classify(message)

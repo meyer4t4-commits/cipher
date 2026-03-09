@@ -1,0 +1,35 @@
+# Frontend — iOS app is the client, Railway only runs the backend
+frontend/
+
+# iOS app source — not needed on server
+CipherApp/
+CipherApp_BACKUP_March8/
+
+# Desktop client
+desktop/
+
+# Static website
+website/
+
+# Git history
+.git/
+
+# macOS junk
+.DS_Store
+*.DS_Store
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Dashboard — kept, referenced in Dockerfile

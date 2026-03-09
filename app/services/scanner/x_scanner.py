@@ -1,4 +1,9 @@
-"""X/Twitter scanner for intelligence gathering."""
+"""
+X/Twitter scanner for intelligence gathering.
+
+Strategy: Browser-first (free, no API), API as fallback.
+The browser_service acts as a real logged-in user scraping X.
+"""
 
 import asyncio
 from datetime import datetime
@@ -14,7 +19,7 @@ from .base import BaseScanner, ScanResult, ScannerConnectionError, ScannerParseE
 
 
 class XScanner(BaseScanner):
-    """Scan X/Twitter for intelligence."""
+    """Scan X/Twitter for intelligence — browser-first, API fallback."""
 
     def __init__(self, bearer_token: Optional[str] = None):
         super().__init__("twitter", rate_limit_delay=1.0)
@@ -24,10 +29,13 @@ class XScanner(BaseScanner):
 
         # Accounts and topics to monitor
         self.monitor_accounts = [
-            "markmeyeragi",  # Your account
+            "markmeyeragi",   # Your account
             "OpenAI",
             "AnthropicAI",
             "GoogleDeepMind",
+            "xaborai",        # xAI / Grok
+            "MistralAI",
+            "ollaborai",      # Ollama
         ]
 
         self.monitor_topics = [
@@ -35,7 +43,109 @@ class XScanner(BaseScanner):
             "local AI",
             "open source LLM",
             "AI safety",
+            "AI agents",
+            "OpenClaw",
         ]
+
+    async def scan(self, keywords: list[str]) -> list[ScanResult]:
+        """
+        Scan X/Twitter — tries browser first (free), falls back to API.
+
+        Args:
+            keywords: Keywords to search for
+
+        Returns:
+            List of ScanResult objects
+        """
+        results = []
+
+        # ---- Strategy 1: Browser scraping (free, no API needed) ----
+        try:
+            browser_results = await self._scan_browser(keywords)
+            results.extend(browser_results)
+            logger.info(f"X browser scan returned {len(browser_results)} results")
+        except Exception as e:
+            logger.warning(f"X browser scan failed: {e}, trying API fallback")
+
+        # ---- Strategy 2: Twitter API v2 (if we have a bearer token and browser failed) ----
+        if not results and self.bearer_token:
+            try:
+                api_results = await self._scan_twitter_api(keywords)
+                results.extend(api_results)
+                logger.info(f"X API scan returned {len(api_results)} results")
+            except ScannerConnectionError as e:
+                logger.warning(f"X API scan also failed: {e}")
+
+        # Parse and filter
+        parsed = await self.parse_results(results)
+        filtered = await self.filter_relevant(parsed, threshold=0.3)
+
+        logger.info(f"X scanner total: {len(filtered)} relevant results")
+        return filtered
+
+    async def _scan_browser(self, keywords: list[str]) -> list[dict]:
+        """
+        Scrape X/Twitter via Playwright browser automation.
+        Uses saved login session — no API key required.
+        """
+        from app.services.browser_service import scrape_x_feed
+
+        results = []
+
+        # Search each keyword
+        for keyword in keywords[:5]:
+            try:
+                await self._rate_limit()
+                data = await scrape_x_feed(query=keyword, max_tweets=10)
+
+                if data.get("error"):
+                    logger.warning(f"Browser X scrape for '{keyword}': {data['error']}")
+                    # If not logged in, bail out entirely
+                    if "Not logged in" in str(data.get("error", "")):
+                        raise RuntimeError("Not logged in to X — browser scan unavailable")
+                    continue
+
+                tweets = data.get("tweets", [])
+                for tweet in tweets:
+                    results.append({
+                        "author": tweet.get("user", "unknown"),
+                        "text": tweet.get("text", ""),
+                        "url": tweet.get("url", ""),
+                        "created_at": tweet.get("timestamp", ""),
+                        "metrics": tweet.get("metrics", {}),
+                        "source": "browser",
+                    })
+
+            except RuntimeError:
+                raise  # Propagate login errors
+            except Exception as e:
+                logger.debug(f"Browser scrape failed for '{keyword}': {e}")
+                continue
+
+        # Also monitor specific accounts
+        for account in self.monitor_accounts[:3]:
+            try:
+                await self._rate_limit()
+                data = await scrape_x_feed(account=account, max_tweets=5)
+
+                if data.get("error"):
+                    continue
+
+                tweets = data.get("tweets", [])
+                for tweet in tweets:
+                    results.append({
+                        "author": tweet.get("user", account),
+                        "text": tweet.get("text", ""),
+                        "url": tweet.get("url", ""),
+                        "created_at": tweet.get("timestamp", ""),
+                        "metrics": tweet.get("metrics", {}),
+                        "source": "browser",
+                    })
+            except Exception as e:
+                logger.debug(f"Browser account scrape failed for '{account}': {e}")
+                continue
+
+        return results
 
     async def _get_client(self):
         """Get or create HTTP client."""
@@ -51,54 +161,8 @@ class XScanner(BaseScanner):
             )
         return self.client
 
-    async def scan(self, keywords: list[str]) -> list[ScanResult]:
-        """
-        Scan X/Twitter for mentions and discussions.
-
-        Args:
-            keywords: Keywords to search for
-
-        Returns:
-            List of ScanResult objects
-        """
-        results = []
-
-        # Try official API first
-        if self.bearer_token:
-            try:
-                api_results = await self._scan_twitter_api(keywords)
-                results.extend(api_results)
-                logger.debug(f"Twitter API returned {len(api_results)} results")
-            except ScannerConnectionError as e:
-                logger.warning(f"Twitter API failed: {e}, falling back to Nitter")
-        else:
-            logger.debug("No Twitter bearer token, using Nitter fallback")
-
-        # Always try Nitter as fallback
-        try:
-            nitter_results = await self._scan_nitter(keywords)
-            results.extend(nitter_results)
-            logger.debug(f"Nitter returned {len(nitter_results)} results")
-        except ScannerConnectionError as e:
-            logger.warning(f"Nitter scan failed: {e}")
-
-        # Parse and filter
-        parsed = await self.parse_results(results)
-        filtered = await self.filter_relevant(parsed, threshold=0.3)
-
-        logger.info(f"X scanner found {len(filtered)} relevant results")
-        return filtered
-
     async def _scan_twitter_api(self, keywords: list[str]) -> list[dict]:
-        """
-        Scan Twitter API v2 for keyword mentions.
-
-        Args:
-            keywords: Keywords to search for
-
-        Returns:
-            List of tweets
-        """
+        """Fallback: Scan Twitter API v2 for keyword mentions."""
         try:
             if not self.bearer_token:
                 return []
@@ -106,8 +170,7 @@ class XScanner(BaseScanner):
             client = await self._get_client()
             results = []
 
-            # Search for each keyword
-            for keyword in keywords[:3]:  # Limit to avoid rate limit
+            for keyword in keywords[:3]:
                 await self._rate_limit()
                 try:
                     search_url = f"{self.v2_api_url}/tweets/search/recent"
@@ -123,10 +186,8 @@ class XScanner(BaseScanner):
                     )
                     response.raise_for_status()
                     data = response.json()
-
                     tweets = data.get("data", [])
                     results.extend(tweets)
-
                 except httpx.HTTPError as e:
                     logger.warning(f"Twitter API request failed for '{keyword}': {e}")
                     continue
@@ -135,140 +196,34 @@ class XScanner(BaseScanner):
         except Exception as e:
             raise ScannerConnectionError(f"Twitter API scan failed: {e}")
 
-    async def _scan_nitter(self, keywords: list[str]) -> list[dict]:
-        """
-        Scan Nitter (privacy-friendly Twitter frontend) for keyword mentions.
-
-        Args:
-            keywords: Keywords to search for
-
-        Returns:
-            List of tweets (as dicts)
-        """
-        try:
-            client = await self._get_client()
-            results = []
-
-            # Nitter RSS search endpoint
-            nitter_instances = [
-                "https://nitter.net",
-                "https://nitter.1d4.us",
-                "https://nitter.cz",
-            ]
-
-            for keyword in keywords[:5]:
-                for nitter_url in nitter_instances:
-                    try:
-                        await self._rate_limit()
-
-                        # Nitter search RSS feed
-                        search_rss_url = f"{nitter_url}/search/rss"
-                        response = await client.get(
-                            search_rss_url,
-                            params={"q": keyword},
-                            follow_redirects=True,
-                        )
-                        response.raise_for_status()
-
-                        # Parse tweets from RSS feed
-                        tweets = self._parse_nitter_rss(
-                            response.text, keyword
-                        )
-                        results.extend(tweets)
-                        logger.debug(
-                            f"Nitter ({nitter_url}) search '{keyword}': {len(tweets)} results"
-                        )
-                        break  # Success with this instance
-                    except Exception as e:
-                        logger.debug(
-                            f"Nitter search failed ({nitter_url}, '{keyword}'): {e}"
-                        )
-                        continue
-
-            return results
-        except Exception as e:
-            raise ScannerConnectionError(f"Nitter scan failed: {e}")
-
-    def _parse_nitter_rss(self, rss_xml: str, keyword: str) -> list[dict]:
-        """
-        Parse Nitter RSS feed for tweets.
-
-        Args:
-            rss_xml: Raw XML from Nitter RSS
-            keyword: Search keyword (for context)
-
-        Returns:
-            List of tweet dicts
-        """
-        import xml.etree.ElementTree as ET
-
-        tweets = []
-        try:
-            root = ET.fromstring(rss_xml)
-
-            # Find all items in RSS feed
-            items = root.findall(".//item")
-
-            for item in items[:10]:
-                try:
-                    title_elem = item.find("title")
-                    desc_elem = item.find("description")
-                    link_elem = item.find("link")
-                    pub_elem = item.find("pubDate")
-
-                    title = (title_elem.text or "").strip() if title_elem else ""
-                    description = (desc_elem.text or "").strip() if desc_elem else ""
-                    link = (link_elem.text or "").strip() if link_elem else ""
-                    pub_date = (pub_elem.text or "").strip() if pub_elem else ""
-
-                    # Extract author from title (usually "Author: tweet text")
-                    if ":" in title:
-                        author, tweet_text = title.split(":", 1)
-                        author = author.strip()
-                    else:
-                        author = "unknown"
-                        tweet_text = title
-
-                    if tweet_text or link:
-                        tweets.append(
-                            {
-                                "author": author,
-                                "text": tweet_text,
-                                "description": description,
-                                "url": link,
-                                "created_at": pub_date,
-                            }
-                        )
-                except Exception as e:
-                    logger.debug(f"Failed to parse Nitter RSS item: {e}")
-                    continue
-
-            return tweets
-        except ET.ParseError as e:
-            logger.debug(f"Failed to parse Nitter RSS: {e}")
-            return []
-
     async def parse_results(self, raw_results: list[dict]) -> list[ScanResult]:
-        """Parse raw Twitter/Nitter results into ScanResult objects."""
+        """Parse raw results into ScanResult objects."""
         results = []
 
         for item in raw_results:
             try:
-                # Handle both Twitter API v2 and Nitter formats
-                if "author_id" in item or "public_metrics" in item:
-                    # Twitter API v2 format
+                # Determine format
+                source_type = item.get("source", "api")
+
+                if source_type == "browser":
+                    author = item.get("author", "unknown")
+                    text = item.get("text", "").strip()
+                    title = f"@{author}: {text[:80]}"
+                    created_at = item.get("created_at", "")
+                    url = item.get("url", "")
+                elif "author_id" in item or "public_metrics" in item:
+                    # Twitter API v2
                     text = item.get("text", "").strip()
                     title = text[:100]
                     created_at = item.get("created_at", "")
                     author = item.get("author_id", "unknown")
+                    url = ""
                 else:
-                    # Nitter format
                     author = item.get("author", "unknown")
                     text = item.get("text", "")
                     title = f"@{author}: {text[:80]}"
                     created_at = item.get("created_at", "")
-
-                url = item.get("url", "")
+                    url = item.get("url", "")
 
                 # Parse timestamp
                 try:

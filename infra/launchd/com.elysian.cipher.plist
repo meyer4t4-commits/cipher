@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Cipher - LaunchAgent for MacBook Pro (M5 Max)
+  Elysian Protocol
+
+  Starts Cipher when you log in. Stops when lid closes / sleep.
+  Resumes automatically on wake.
+
+  Install:
+    cp infra/launchd/com.elysian.cipher.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.elysian.cipher.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.elysian.cipher.plist
+    rm ~/Library/LaunchAgents/com.elysian.cipher.plist
+
+  Check status:
+    launchctl list | grep cipher
+-->
+<dict>
+    <key>Label</key>
+    <string>com.elysian.cipher</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/docker</string>
+        <string>compose</string>
+        <string>-f</string>
+        <string>/Users/markmeyer/cipher-app/docker-compose.yml</string>
+        <string>up</string>
+        <string>-d</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/markmeyer/cipher-app/logs/launchd-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/markmeyer/cipher-app/logs/launchd-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/markmeyer/cipher-app</string>
+</dict>
+</plist>

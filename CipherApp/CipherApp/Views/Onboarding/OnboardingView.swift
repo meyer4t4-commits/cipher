@@ -29,6 +29,13 @@ struct OnboardingView: View {
             accentText: "Your thoughts, any format."
         ),
         OnboardingPage(
+            icon: "network",
+            iconColor: "60A5FA",
+            title: "Connect to Server",
+            subtitle: "Cipher works with your Elysian server for full AI power. You can set the server URL in Settings anytime — or just use the default.",
+            accentText: "Smart routing. Seamless connection."
+        ),
+        OnboardingPage(
             icon: "sparkles",
             iconColor: "FBBF24",
             title: "Always Evolving",
@@ -115,25 +122,30 @@ struct OnboardingView: View {
         VStack(spacing: Spacing.xxxl) {
             Spacer()
 
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(Color(hex: page.iconColor).opacity(0.12))
-                    .frame(width: 120, height: 120)
+            // Icon — first page gets the animated Cipher logo, others keep SF Symbols
+            if page.icon == "lock.shield.fill" {
+                CipherLogo(size: 100, animated: true)
+                    .shadow(color: CipherTheme.accent.opacity(0.3), radius: 20, y: 8)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color(hex: page.iconColor).opacity(0.12))
+                        .frame(width: 120, height: 120)
 
-                Circle()
-                    .fill(Color(hex: page.iconColor).opacity(0.06))
-                    .frame(width: 160, height: 160)
+                    Circle()
+                        .fill(Color(hex: page.iconColor).opacity(0.06))
+                        .frame(width: 160, height: 160)
 
-                Image(systemName: page.icon)
-                    .font(.system(size: 48, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: page.iconColor), Color(hex: page.iconColor).opacity(0.7)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                    Image(systemName: page.icon)
+                        .font(.system(size: 48, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color(hex: page.iconColor), Color(hex: page.iconColor).opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
+                }
             }
 
             // Text

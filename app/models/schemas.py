@@ -4,6 +4,7 @@ Pydantic schemas for Cipher API requests and responses.
 
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -48,6 +49,21 @@ class ChatRequest(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.7
     stream: bool = False
+    images: list[str] = []  # base64-encoded images from iOS client
+
+
+class RecommendedAgentInfo(BaseModel):
+    agent_name: str = ""
+    display_name: str = ""
+    reason: str = ""
+    confidence: float = 0.0
+    suggested_instruction: str = ""
+
+
+class ImageAttachment(BaseModel):
+    url: str = ""
+    mime_type: str = "image/png"
+    analysis: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -57,6 +73,10 @@ class ChatResponse(BaseModel):
     tokens_used: int = 0
     cost_usd: float = 0.0
     timestamp: datetime = Field(default_factory=lambda: datetime.now())
+    recommended_agent: Optional[RecommendedAgentInfo] = None
+    images: list[ImageAttachment] = []  # Images in response (generated or analyzed)
+    confidence_score: float | None = None  # 0-1 reliability score
+    validation_warnings: list[str] | None = None  # Flags for unverified claims
 
 
 # --- Conversations ---

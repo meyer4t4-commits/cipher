@@ -465,7 +465,7 @@ struct VoiceSettingsView: View {
     private func loadAvailableVoices() async {
         isLoadingVoices = true
         do {
-            let voices = try await OrchidAPI.shared.listVoices()
+            let voices = try await CipherAPI.shared.listVoices()
             availableVoices = voices
         } catch {
             print("Failed to load voices: \(error)")

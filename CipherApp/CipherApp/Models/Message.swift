@@ -70,6 +70,8 @@ struct Message: Identifiable, Codable {
     let costUsd: Double?
     let attachments: [Attachment]
     let referenceSources: [String]?
+    let confidenceScore: Double?
+    let validationWarnings: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -83,6 +85,8 @@ struct Message: Identifiable, Codable {
         case costUsd = "cost_usd"
         case attachments
         case referenceSources = "reference_sources"
+        case confidenceScore = "confidence_score"
+        case validationWarnings = "validation_warnings"
     }
 
     init(
@@ -96,7 +100,9 @@ struct Message: Identifiable, Codable {
         tokensUsed: Int? = nil,
         costUsd: Double? = nil,
         attachments: [Attachment] = [],
-        referenceSources: [String]? = nil
+        referenceSources: [String]? = nil,
+        confidenceScore: Double? = nil,
+        validationWarnings: [String]? = nil
     ) {
         self.id = id
         self.conversationId = conversationId
@@ -109,6 +115,8 @@ struct Message: Identifiable, Codable {
         self.costUsd = costUsd
         self.attachments = attachments
         self.referenceSources = referenceSources
+        self.confidenceScore = confidenceScore
+        self.validationWarnings = validationWarnings
     }
 
     var modelDisplayName: String {

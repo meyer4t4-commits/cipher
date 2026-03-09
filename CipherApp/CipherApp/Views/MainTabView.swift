@@ -5,6 +5,8 @@ import SwiftUI
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var previousTab = 0
+    @State private var pendingInteractions = 0
+    @State private var newChatTrigger = UUID()
 
     init() {
         // Customize tab bar appearance
@@ -34,6 +36,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             ChatView()
+                .id(newChatTrigger)
                 .tabItem {
                     Image(systemName: selectedTab == 0 ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
                     Text("Chat")
@@ -43,28 +46,53 @@ struct MainTabView: View {
             AgentsView()
                 .tabItem {
                     Image(systemName: selectedTab == 1 ? "cpu.fill" : "cpu")
-                    Text("Agents")
+                    Text("Brains")
                 }
                 .tag(1)
+                .badge(pendingInteractions)
 
-            ConversationListView()
+            ProjectsView()
                 .tabItem {
-                    Image(systemName: selectedTab == 2 ? "clock.fill" : "clock")
-                    Text("History")
+                    Image(systemName: selectedTab == 2 ? "folder.fill" : "folder")
+                    Text("My Projects")
                 }
                 .tag(2)
 
-            SettingsView()
+            ResearchView()
                 .tabItem {
-                    Image(systemName: selectedTab == 3 ? "gearshape.fill" : "gearshape")
-                    Text("Settings")
+                    Image(systemName: selectedTab == 3 ? "brain.fill" : "brain")
+                    Text("Research")
                 }
                 .tag(3)
+
+            SettingsView()
+                .tabItem {
+                    Image(systemName: selectedTab == 4 ? "gearshape.fill" : "gearshape")
+                    Text("Settings")
+                }
+                .tag(4)
         }
         .tint(CipherTheme.accent)
-        .onChange(of: selectedTab) { oldValue, _ in
+        .onChange(of: selectedTab) { oldValue, newValue in
             previousTab = oldValue
             HapticsService.shared.selection()
+        }
+        .task {
+            await refreshInteractionBadge()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AgentNotificationReceived"))) { _ in
+            Task { await refreshInteractionBadge() }
+        }
+    }
+
+    private func refreshInteractionBadge() async {
+        do {
+            let response = try await CipherAPI.shared.getPendingInteractions()
+            await MainActor.run {
+                pendingInteractions = response.total
+            }
+        } catch {
+            // Silently fail
         }
     }
 }

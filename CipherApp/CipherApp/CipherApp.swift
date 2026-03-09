@@ -1,7 +1,9 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct CipherApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var appState = AppState()
 
     var body: some Scene {
@@ -27,6 +29,58 @@ struct CipherApp: App {
             }
             .preferredColorScheme(.dark)
         }
+    }
+}
+
+// MARK: - App Delegate (Push Notifications)
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        _ = UserNotificationManager.shared
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        UserNotificationManager.shared.deviceToken = tokenString
+
+        Task {
+            do {
+                try await CipherAPI.shared.registerNotificationDevice(
+                    deviceToken: tokenString,
+                    deviceName: UIDevice.current.name
+                )
+            } catch {
+                print("Failed to register device token: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("Push registration failed: \(error.localizedDescription)")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("AgentNotificationReceived"),
+            object: nil,
+            userInfo: userInfo
+        )
+        completionHandler(.newData)
     }
 }
 
@@ -111,7 +165,7 @@ struct SplashScreenView: View {
                             .opacity(ringOpacity)
                     }
 
-                    CipherLogo(size: 100, animated: false)
+                    CipherLogo(size: 100, animated: true)
                         .scaleEffect(logoScale)
                 }
                 .opacity(logoOpacity)

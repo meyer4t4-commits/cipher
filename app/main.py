@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.api import agents, chat, memory, models, system, scanner, voice
+from app.api import agents, chat, memory, models, system, scanner, voice, notifications, recommendations, media, research, cron, projects
 from app.gateway.api import router as gateway_router
 from app.gateway.premium_routes import availability_router
 import os
@@ -28,14 +28,79 @@ from app.services.voice_service import close_voice_service
 async def lifespan(app: FastAPI):
     logger.info(f"Starting Cipher v{__version__} [{settings.app_env}]")
     logger.info(f"Default model: {settings.default_model}")
+
+    # ── Export ALL API keys to environment so every agent can access them ──
+    # LLM providers (always set)
     os.environ['ANTHROPIC_API_KEY'] = settings.anthropic_api_key
     os.environ['GROQ_API_KEY'] = settings.groq_api_key
     os.environ['OPENAI_API_KEY'] = settings.openai_api_key
     os.environ['DEEPSEEK_API_KEY'] = settings.deepseek_api_key
+    if settings.xai_api_key:
+        os.environ['XAI_API_KEY'] = settings.xai_api_key
+        logger.info("xAI (Grok) API: ACTIVE")
 
-    # Export ElevenLabs API key if configured
+    # Voice
     if settings.elevenlabs_api_key:
         os.environ['ELEVENLABS_API_KEY'] = settings.elevenlabs_api_key
+
+    # Media generation
+    if settings.stability_api_key:
+        os.environ['STABILITY_API_KEY'] = settings.stability_api_key
+    if settings.replicate_api_key:
+        os.environ['REPLICATE_API_TOKEN'] = settings.replicate_api_key
+    if settings.fal_api_key:
+        os.environ['FAL_KEY'] = settings.fal_api_key
+
+    # Web search (Brave) — CRITICAL for anti-hallucination
+    if settings.brave_search_api_key:
+        os.environ['BRAVE_SEARCH_API_KEY'] = settings.brave_search_api_key
+        logger.info("Brave Search API: ACTIVE")
+    else:
+        logger.warning("Brave Search API: NOT CONFIGURED — agents will lack real-time search")
+
+    # Communication — Twilio SMS/Voice
+    if settings.twilio_account_sid:
+        os.environ['TWILIO_ACCOUNT_SID'] = settings.twilio_account_sid
+        os.environ['TWILIO_AUTH_TOKEN'] = settings.twilio_auth_token
+        os.environ['TWILIO_PHONE_NUMBER'] = settings.twilio_phone_number
+        os.environ['TWILIO_MESSAGING_SERVICE_SID'] = settings.twilio_messaging_service_sid
+        logger.info("Twilio SMS/Voice: ACTIVE")
+
+    # Communication — Email (SMTP/IMAP)
+    if settings.smtp_user:
+        os.environ['SMTP_HOST'] = settings.smtp_host
+        os.environ['SMTP_PORT'] = str(settings.smtp_port)
+        os.environ['SMTP_USER'] = settings.smtp_user
+        os.environ['SMTP_PASS'] = settings.smtp_pass
+        os.environ['IMAP_HOST'] = settings.imap_host
+        os.environ['IMAP_USER'] = settings.imap_user
+        os.environ['IMAP_PASS'] = settings.imap_pass
+        logger.info("Email SMTP/IMAP: ACTIVE")
+
+    # Communication — Slack
+    if settings.slack_bot_token:
+        os.environ['SLACK_BOT_TOKEN'] = settings.slack_bot_token
+        logger.info("Slack Bot: ACTIVE")
+
+    # Twitter/X API — Mark is PAYING for this
+    if settings.x_bearer_token:
+        os.environ['X_BEARER_TOKEN'] = settings.x_bearer_token
+        logger.info("Twitter/X API: ACTIVE")
+    else:
+        logger.warning("Twitter/X API: NOT CONFIGURED")
+    if settings.x_consumer_key:
+        os.environ['X_CONSUMER_KEY'] = settings.x_consumer_key
+        os.environ['X_CONSUMER_SECRET'] = settings.x_consumer_secret
+
+    # Real estate — ATTOM
+    if settings.attom_api_key:
+        os.environ['ATTOM_API_KEY'] = settings.attom_api_key
+        logger.info("ATTOM Real Estate API: ACTIVE")
+
+    # News
+    if settings.newsapi_key:
+        os.environ['NEWSAPI_KEY'] = settings.newsapi_key
+        logger.info("NewsAPI: ACTIVE")
 
     init_db()
     logger.info("Database initialized")
@@ -99,6 +164,12 @@ app.include_router(models.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(scanner.router, prefix="/api/v1")
 app.include_router(voice.router, prefix="/api/v1")
+app.include_router(notifications.router)
+app.include_router(recommendations.router)
+app.include_router(media.router)
+app.include_router(research.router)  # CipherResearch autonomous self-improvement
+app.include_router(cron.router)  # Scheduled tasks (cron registry)
+app.include_router(projects.router)  # Projects filing system + credential vault
 app.include_router(gateway_router, prefix="/api/v1")
 app.include_router(availability_router, prefix="/api/v1")
 

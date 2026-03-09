@@ -145,11 +145,15 @@ class TaskExecutor:
         if progress_callback:
             agent.set_progress_callback(progress_callback)
 
+        # Set executor reference for agent chaining (allows invoke_agent())
+        agent.set_executor_ref(self)
+
         # Execute the task
         result = await agent.run(task)
 
-        # Clear callback after execution
+        # Clear callback and executor ref after execution
         agent.set_progress_callback(None)
+        agent.set_executor_ref(None)
 
         # Store in history
         self._execution_history[task.task_id] = result

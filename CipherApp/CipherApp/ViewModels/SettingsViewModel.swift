@@ -7,12 +7,12 @@ import LocalAuthentication
 @Observable
 class SettingsViewModel {
     var serverURL: String {
-        get { OrchidAPI.shared.serverURL }
-        set { OrchidAPI.shared.serverURL = newValue }
+        get { CipherAPI.shared.serverURL }
+        set { CipherAPI.shared.serverURL = newValue }
     }
 
-    var isConnected: Bool { OrchidAPI.shared.isHealthy }
-    var latencyMs: Int? { OrchidAPI.shared.latencyMs }
+    var isConnected: Bool { CipherAPI.shared.isHealthy }
+    var latencyMs: Int? { CipherAPI.shared.latencyMs }
     var isTesting = false
 
     var selectedTier: ModelTier {
@@ -81,6 +81,7 @@ class SettingsViewModel {
             return "Passcode"
         }
         switch context.biometryType {
+        case .none: return "Passcode"
         case .faceID: return "Face ID"
         case .touchID: return "Touch ID"
         case .opticID: return "Optic ID"
@@ -107,13 +108,13 @@ class SettingsViewModel {
     @MainActor
     func testConnection() async {
         isTesting = true
-        _ = await OrchidAPI.shared.checkHealth()
+        _ = await CipherAPI.shared.checkHealth()
         isTesting = false
     }
 
     @MainActor
     func checkServerHealth() async {
-        _ = await OrchidAPI.shared.checkHealth()
+        _ = await CipherAPI.shared.checkHealth()
     }
 
     func clearAllData() {

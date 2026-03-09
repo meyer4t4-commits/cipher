@@ -219,6 +219,51 @@ struct PressableModifier: ViewModifier {
     }
 }
 
+// MARK: - Spring Appear Animation
+
+struct SpringAppearModifier: ViewModifier {
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.92)
+            .offset(y: appeared ? 0 : 12)
+            .onAppear {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
+                    appeared = true
+                }
+            }
+    }
+}
+
+extension View {
+    /// Animate appearance with a spring slide-up + scale effect
+    func springAppear() -> some View {
+        self.modifier(SpringAppearModifier())
+    }
+}
+
+// MARK: - Relative Future Time
+
+extension Date {
+    /// Format a future date as relative time ("in 2 hours", "in 3 days")
+    func relativeToNow() -> String {
+        let now = Date()
+        let interval = self.timeIntervalSince(now)
+        if interval <= 0 { return timeAgoDisplay() }
+
+        let minutes = Int(interval / 60)
+        let hours = minutes / 60
+        let days = hours / 24
+
+        if days > 0 { return "in \(days)d \(hours % 24)h" }
+        if hours > 0 { return "in \(hours)h \(minutes % 60)m" }
+        if minutes > 0 { return "in \(minutes)m" }
+        return "now"
+    }
+}
+
 // MARK: - Conditional Modifier
 
 extension View {

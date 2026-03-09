@@ -162,12 +162,12 @@ class VoiceService {
         synthesizer.speak(utterance)
     }
 
-    // MARK: - Voice Synthesis (Orchid TTS)
+    // MARK: - Voice Synthesis (Cipher TTS)
 
     @MainActor
     func synthesizeSpeech(_ text: String) async -> Data? {
         do {
-            let audioData = try await OrchidAPI.shared.synthesizeSpeech(
+            let audioData = try await CipherAPI.shared.synthesizeSpeech(
                 text: text,
                 voiceId: selectedVoiceId
             )

@@ -329,6 +329,28 @@ class CronRegistry:
             description="Nightly sweep — index all new agent outputs into the knowledge base",
         ))
 
+        # === MODEL REGISTRY AUTO-UPDATE — Daily 3 AM ===
+        self.register(CronTask(
+            task_id="model-registry-update",
+            name="Model Registry Auto-Update",
+            cron_expression="0 3 * * *",
+            agent_name="research_agent",
+            operation="update_model_registry",
+            params={"run_benchmarks": True, "check_new_models": True},
+            description="Nightly model discovery + benchmark — keeps routing tables current with latest releases",
+        ))
+
+        # === X/TWITTER SCANNER — Every 3 Hours (7AM-11PM) ===
+        self.register(CronTask(
+            task_id="x-scanner",
+            name="X/Twitter Intelligence Scanner",
+            cron_expression="0 7,10,13,16,19,22 * * *",
+            agent_name="sentinel_agent",
+            operation="scan_x",
+            params={"use_browser": True},
+            description="X/Twitter scan for AI news, crypto signals, and competitor activity",
+        ))
+
     def register(self, task: CronTask) -> None:
         """Register a cron task (won't overwrite existing unless forced)."""
         if task.task_id not in self._tasks:

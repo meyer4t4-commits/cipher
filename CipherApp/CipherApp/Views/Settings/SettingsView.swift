@@ -26,8 +26,14 @@ struct SettingsView: View {
                         // Voice & Audio Section
                         voiceSection
 
+                        // Notifications
+                        notificationSection
+
                         // Privacy & Security
                         privacySection
+
+                        // Chat History
+                        historySection
 
                         // Data Management
                         dataSection
@@ -71,7 +77,7 @@ struct SettingsView: View {
             VStack(spacing: Spacing.md) {
                 // Server URL
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Orchid Server URL")
+                    Text("Cipher Server URL")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(CipherTheme.textSecondary)
 
@@ -315,6 +321,56 @@ struct SettingsView: View {
         .foregroundColor(CipherTheme.textPrimary)
     }
 
+    // MARK: - Notification Section
+
+    private var notificationSection: some View {
+        NavigationLink(destination: NotificationSettingsView()) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(CipherTheme.accent)
+
+                    Text("Notifications")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(CipherTheme.accent)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            Text("Push & SMS Alerts")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(CipherTheme.textPrimary)
+
+                            Text("Agent questions, completions, and failures")
+                                .font(.system(size: 12))
+                                .foregroundColor(CipherTheme.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(CipherTheme.textTertiary)
+                    }
+                    .padding(Spacing.lg)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(CipherTheme.surface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .stroke(CipherTheme.border, lineWidth: 0.5)
+                            )
+                    )
+                }
+            }
+        }
+        .foregroundColor(CipherTheme.textPrimary)
+    }
+
     // MARK: - Privacy Section
 
     private var privacySection: some View {
@@ -347,6 +403,29 @@ struct SettingsView: View {
                     Spacer()
 
                     PrivacyBadge(compact: true)
+                }
+            }
+        }
+    }
+
+    // MARK: - Data Section
+
+    // MARK: - Chat History
+
+    private var historySection: some View {
+        SettingsSection(title: "Chat History", icon: "clock.fill") {
+            NavigationLink(destination: ConversationListView()) {
+                HStack {
+                    Text("View Conversations")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(CipherTheme.textPrimary)
+                    Spacer()
+                    Text("\(viewModel.totalConversations)")
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .foregroundColor(CipherTheme.textSecondary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(CipherTheme.textTertiary)
                 }
             }
         }
@@ -407,7 +486,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         SettingsSection(title: "About", icon: "info.circle") {
             HStack(spacing: Spacing.lg) {
-                CipherLogo(size: 48)
+                CipherLogo(size: 48, animated: true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(AppConstants.appName)

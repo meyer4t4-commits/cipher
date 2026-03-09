@@ -136,6 +136,9 @@ class ResearchAgent(BaseAgent):
             elif operation == "summarize":
                 await self.emit_progress("Summarizing content...")
                 return await self._summarize(task)
+            elif operation == "update_model_registry":
+                await self.emit_progress("Running model discovery + benchmarks...")
+                return await self._update_model_registry(task)
             else:
                 # Fallback: if we have a query, do a web search
                 if "query" in task.params:
@@ -523,6 +526,82 @@ class ResearchAgent(BaseAgent):
             result.output["note"] = "Summarization without additional context returns raw web search results. Pass a specific topic or query to summarize."
 
         return result
+
+    async def _update_model_registry(self, task: AgentTask) -> AgentResult:
+        """
+        Run full model discovery + benchmarking.
+        Called by the nightly cron task "model-registry-update".
+
+        Scans X/Twitter, web search, and LiteLLM for new model releases,
+        then benchmarks any new models and proposes routing updates.
+        """
+        try:
+            from app.services.model_discovery import get_model_registry
+            from app.services.self_research.model_evaluator import (
+                compare_models, propose_routing_updates,
+            )
+            from app.services.llm_router import (
+                MODEL_REGISTRY, save_model_benchmarks,
+            )
+
+            registry = get_model_registry()
+
+            # Phase 1: Discovery from all sources
+            await self.emit_progress("Phase 1: Scanning X, web, and LiteLLM for new models...")
+            discovery_results = await registry.full_discovery()
+
+            new_count = discovery_results.get("total_new", 0)
+            x_signals = len(discovery_results.get("x_signals", []))
+            web_signals = len(discovery_results.get("web_signals", []))
+
+            await self.emit_progress(
+                f"Discovery complete: {new_count} new models, "
+                f"{x_signals} X signals, {web_signals} web signals"
+            )
+
+            # Phase 2: Benchmark if requested
+            run_benchmarks = task.params.get("run_benchmarks", True)
+            if run_benchmarks:
+                await self.emit_progress("Phase 2: Benchmarking all models...")
+                all_models = [info["model_id"] for info in MODEL_REGISTRY.values()]
+                comparison = await compare_models(all_models)
+                proposals = await propose_routing_updates(comparison)
+
+                if proposals.get("model_map_overrides") or proposals.get("agent_model_overrides"):
+                    reasoning = proposals.get("reasoning", [])
+                    await self.emit_progress(
+                        f"Found {len(reasoning)} routing improvements. Saving..."
+                    )
+                    save_model_benchmarks({
+                        "comparison": comparison,
+                        "proposals": proposals,
+                        "model_map_overrides": proposals.get("model_map_overrides", {}),
+                        "agent_model_overrides": proposals.get("agent_model_overrides", {}),
+                    })
+                else:
+                    await self.emit_progress("Current routing is optimal. No changes needed.")
+
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=True,
+                output={
+                    "discovery": discovery_results,
+                    "new_models": new_count,
+                    "x_signals": x_signals,
+                    "web_signals": web_signals,
+                    "benchmarks_run": run_benchmarks,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Model registry update failed: {e}")
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                error=str(e),
+            )
 
     async def verify(self, result: AgentResult) -> bool:
         """Verify research result."""

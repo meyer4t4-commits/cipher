@@ -81,6 +81,34 @@ struct ConversationListView: View {
                                 }
                             }
                             .padding(.horizontal, Spacing.md)
+                            // Extra bottom padding so FAB doesn't cover last row
+                            Spacer(minLength: 80)
+                        }
+                    }
+                }
+
+                // Floating "New Chat" button — always visible when conversations exist
+                if !conversations.isEmpty && !isLoading {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            NavigationLink(destination: ChatView()) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 16, weight: .bold))
+                                    Text("New Chat")
+                                        .font(.system(size: 15, weight: .bold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 14)
+                                .background(CipherTheme.accentGradient)
+                                .clipShape(Capsule())
+                                .shadow(color: CipherTheme.accent.opacity(0.4), radius: 12, y: 4)
+                            }
+                            .padding(.trailing, Spacing.lg)
+                            .padding(.bottom, Spacing.lg)
                         }
                     }
                 }
@@ -175,9 +203,7 @@ struct ConversationListView: View {
         VStack(spacing: Spacing.xl) {
             Spacer()
 
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 48))
-                .foregroundStyle(CipherTheme.accentGradient)
+            CipherLogo(size: 64, animated: true)
 
             Text("No Conversations Yet")
                 .font(.system(size: 18, weight: .semibold))

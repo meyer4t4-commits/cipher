@@ -10,6 +10,7 @@ struct ChatRequest: Codable {
     let maxTokens: Int
     let temperature: Double
     let stream: Bool
+    let images: [String]  // base64-encoded images
 
     enum CodingKeys: String, CodingKey {
         case message
@@ -19,6 +20,7 @@ struct ChatRequest: Codable {
         case maxTokens = "max_tokens"
         case temperature
         case stream
+        case images
     }
 
     init(
@@ -28,7 +30,8 @@ struct ChatRequest: Codable {
         includeMemory: Bool = true,
         maxTokens: Int = 4096,
         temperature: Double = 0.7,
-        stream: Bool = false
+        stream: Bool = false,
+        images: [String] = []
     ) {
         self.message = message
         self.conversationId = conversationId
@@ -37,10 +40,23 @@ struct ChatRequest: Codable {
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.stream = stream
+        self.images = images
     }
 }
 
 // MARK: - Chat Response
+
+struct ResponseImageAttachment: Codable {
+    let url: String
+    let mimeType: String?
+    let analysis: String?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case mimeType = "mime_type"
+        case analysis
+    }
+}
 
 struct ChatResponse: Codable {
     let message: String
@@ -49,6 +65,10 @@ struct ChatResponse: Codable {
     let tokensUsed: Int
     let costUsd: Double
     let timestamp: String?
+    let recommendedAgent: RecommendedAgentInfo?
+    let images: [ResponseImageAttachment]?
+    let confidenceScore: Double?
+    let validationWarnings: [String]?
 
     enum CodingKeys: String, CodingKey {
         case message
@@ -57,6 +77,145 @@ struct ChatResponse: Codable {
         case tokensUsed = "tokens_used"
         case costUsd = "cost_usd"
         case timestamp
+        case recommendedAgent = "recommended_agent"
+        case images
+        case confidenceScore = "confidence_score"
+        case validationWarnings = "validation_warnings"
+    }
+}
+
+// MARK: - Agent Recommendation (from chat response)
+
+struct RecommendedAgentInfo: Codable {
+    let agentName: String
+    let displayName: String
+    let reason: String
+    let confidence: Double
+    let suggestedInstruction: String
+
+    enum CodingKeys: String, CodingKey {
+        case agentName = "agent_name"
+        case displayName = "display_name"
+        case reason, confidence
+        case suggestedInstruction = "suggested_instruction"
+    }
+}
+
+// MARK: - Spawn Session Models
+
+struct SpawnBatchRequest: Codable {
+    let tasks: [SpawnTaskItem]
+    let spawnSessionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case tasks
+        case spawnSessionId = "spawn_session_id"
+    }
+}
+
+struct SpawnTaskItem: Codable {
+    let agentName: String
+    let instruction: String
+
+    enum CodingKeys: String, CodingKey {
+        case agentName = "agent_name"
+        case instruction
+    }
+}
+
+struct SpawnBatchResponse: Codable {
+    let spawnSessionId: String
+    let taskIds: [String]
+    let total: Int
+
+    enum CodingKeys: String, CodingKey {
+        case spawnSessionId = "spawn_session_id"
+        case taskIds = "task_ids"
+        case total
+    }
+}
+
+struct RunningAgentStatus: Codable, Identifiable {
+    let taskId: String
+    let agentName: String
+    let status: String
+    let progress: Double
+    let currentStep: String
+    let error: String?
+    let outputPreview: String?
+
+    var id: String { taskId }
+
+    enum CodingKeys: String, CodingKey {
+        case taskId = "task_id"
+        case agentName = "agent_name"
+        case status, progress
+        case currentStep = "current_step"
+        case error
+        case outputPreview = "output_preview"
+    }
+}
+
+struct SpawnSessionSummary: Codable {
+    let total: Int
+    let running: Int
+    let completed: Int
+    let failed: Int
+}
+
+struct SpawnSessionStatusResponse: Codable {
+    let spawnSessionId: String
+    let createdAt: String
+    let tasks: [RunningAgentStatus]
+    let summary: SpawnSessionSummary
+
+    enum CodingKeys: String, CodingKey {
+        case spawnSessionId = "spawn_session_id"
+        case createdAt = "created_at"
+        case tasks, summary
+    }
+}
+
+// MARK: - Agent Interaction Models
+
+struct AgentInteractionAPI: Codable, Identifiable {
+    let interactionId: String
+    let taskId: String
+    let agentName: String
+    let question: String
+    let options: [String]
+    let status: String
+    let createdAt: String
+    let timeoutAt: String
+
+    var id: String { interactionId }
+
+    enum CodingKeys: String, CodingKey {
+        case interactionId = "interaction_id"
+        case taskId = "task_id"
+        case agentName = "agent_name"
+        case question, options, status
+        case createdAt = "created_at"
+        case timeoutAt = "timeout_at"
+    }
+}
+
+struct PendingInteractionsResponse: Codable {
+    let total: Int
+    let interactions: [AgentInteractionAPI]
+}
+
+struct InteractionAnswerResponse: Codable {
+    let success: Bool
+    let interactionId: String
+    let taskId: String?
+    let resumed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case success
+        case interactionId = "interaction_id"
+        case taskId = "task_id"
+        case resumed
     }
 }
 
@@ -212,5 +371,108 @@ struct ScannerBriefing: Codable, Identifiable {
         case "huggingface", "models": return "cpu.fill"
         default: return "globe"
         }
+    }
+}
+
+// MARK: - Scanner Models
+
+struct ScannerBriefingResponse: Codable {
+    let briefings: [ScannerBriefing]?
+    let generatedAt: String?
+    let sourceCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case briefings
+        case generatedAt = "generated_at"
+        case sourceCount = "source_count"
+    }
+}
+
+struct ScannerStatusResponse: Codable {
+    let running: Bool
+    let lastScanAt: String?
+    let activeScanners: [String]?
+    let totalScans: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case running
+        case lastScanAt = "last_scan_at"
+        case activeScanners = "active_scanners"
+        case totalScans = "total_scans"
+    }
+}
+
+// MARK: - Background Task Models
+
+struct BackgroundTaskInfo: Codable, Identifiable {
+    let taskId: String
+    let name: String
+    let status: String
+    let description: String?
+    let startedAt: String?
+    let completedAt: String?
+
+    var id: String { taskId }
+
+    enum CodingKeys: String, CodingKey {
+        case name, status, description
+        case taskId = "task_id"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+    }
+}
+
+struct BackgroundTaskDetail: Codable {
+    let taskId: String
+    let name: String
+    let status: String
+    let description: String?
+    let startedAt: String?
+    let completedAt: String?
+    let progress: [TaskProgressEntry]?
+
+    enum CodingKeys: String, CodingKey {
+        case name, status, description, progress
+        case taskId = "task_id"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+    }
+}
+
+struct TaskProgressEntry: Codable {
+    let message: String
+    let timestamp: String?
+    let percent: Double?
+    let step: String?
+}
+
+// MARK: - Memory Models
+
+struct MemoryRecallResponse: Codable {
+    let results: [MemoryResult]?
+    let query: String?
+}
+
+struct MemoryResult: Codable, Identifiable {
+    let memoryId: String?
+    let content: String
+    let relevance: Double?
+    let metadata: [String: String]?
+
+    var id: String { memoryId ?? String(content.prefix(20)) }
+
+    enum CodingKeys: String, CodingKey {
+        case content, relevance, metadata
+        case memoryId = "id"
+    }
+}
+
+struct MemoryStatsResponse: Codable {
+    let totalMemories: Int?
+    let totalDocuments: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case totalMemories = "total_memories"
+        case totalDocuments = "total_documents"
     }
 }

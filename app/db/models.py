@@ -103,3 +103,58 @@ class TaskRecord(Base):
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Projects & Credentials — Cipher's filing system for user projects
+# ---------------------------------------------------------------------------
+
+class ProjectRecord(Base):
+    """A user project — education platform, app, website, etc."""
+    __tablename__ = "projects"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(50), default="folder.fill")
+    color = Column(String(20), default="blue")
+    platform = Column(String(50), default="other")  # ios, web, backend, fullstack, mobile, other
+    repo_url = Column(String(500), nullable=True)
+    deploy_url = Column(String(500), nullable=True)
+    railway_project_id = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    services = relationship("ProjectServiceRecord", back_populates="project", cascade="all, delete-orphan")
+    credentials = relationship("ServiceCredentialRecord", back_populates="project")
+
+
+class ProjectServiceRecord(Base):
+    """A service linked to a project (e.g., OpenAI, Railway, ElevenLabs)."""
+    __tablename__ = "project_services"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    service_type = Column(String(50), nullable=False)  # openai, railway, elevenlabs, etc.
+    credential_id = Column(String(36), ForeignKey("service_credentials.id"), nullable=True)
+    config = Column(Text, nullable=True)  # JSON string for service-specific config
+    created_at = Column(DateTime, default=utcnow)
+
+    project = relationship("ProjectRecord", back_populates="services")
+    credential = relationship("ServiceCredentialRecord")
+
+
+class ServiceCredentialRecord(Base):
+    """Encrypted API keys and tokens for external services."""
+    __tablename__ = "service_credentials"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    service_type = Column(String(50), nullable=False)
+    token_value = Column(Text, nullable=False)  # TODO: encrypt at rest
+    additional_fields = Column(Text, nullable=True)  # JSON string
+    created_at = Column(DateTime, default=utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+    project = relationship("ProjectRecord", back_populates="credentials")

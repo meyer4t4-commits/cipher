@@ -109,7 +109,7 @@ struct VoiceModeView: View {
                     // Cancel
                     Button(action: {
                         Task {
-                            await voice.stopListening()
+                            voice.stopListening()
                         }
                         dismiss()
                     }) {
@@ -170,7 +170,7 @@ struct VoiceModeView: View {
     private func toggleListening() {
         Task {
             if voice.isListening {
-                await voice.stopListening()
+                voice.stopListening()
             } else {
                 await voice.startListening()
             }
@@ -182,7 +182,7 @@ struct VoiceModeView: View {
         guard !voice.transcription.isEmpty else { return }
         let text = voice.transcription
         Task {
-            await voice.stopListening()
+            voice.stopListening()
         }
         onSend(text)
         dismiss()

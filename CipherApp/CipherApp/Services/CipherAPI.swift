@@ -21,7 +21,7 @@ enum APIError: LocalizedError {
         case .invalidRequest:
             return "Failed to prepare request"
         case .invalidResponse:
-            return "Invalid response from Orchid"
+            return "Invalid response from Cipher"
         case .decodingError:
             return "Failed to decode response"
         case .networkError(let message):
@@ -31,7 +31,7 @@ enum APIError: LocalizedError {
         case .streamingError(let message):
             return "Streaming error: \(message)"
         case .timeout:
-            return "Request timed out. Is Orchid running?"
+            return "Request timed out. Is Cipher running?"
         case .cancelled:
             return "Request was cancelled"
         case .unknown:
@@ -40,18 +40,18 @@ enum APIError: LocalizedError {
     }
 }
 
-// MARK: - Orchid API Client
+// MARK: - Cipher API Client
 
 @Observable
-class OrchidAPI {
-    static let shared = OrchidAPI()
+class CipherAPI {
+    static let shared = CipherAPI()
 
     var serverURL: String {
         get {
-            UserDefaults.standard.string(forKey: "orchid_server_url") ?? AppConstants.defaultServerURL
+            UserDefaults.standard.string(forKey: "cipher_server_url") ?? AppConstants.defaultServerURL
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "orchid_server_url")
+            UserDefaults.standard.set(newValue, forKey: "cipher_server_url")
         }
     }
 
@@ -65,8 +65,8 @@ class OrchidAPI {
 
     init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 300
+        config.timeoutIntervalForRequest = 120  // 2 min — orchestrator has tool calling + memory + fact-checking
+        config.timeoutIntervalForResource = 600
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
 
@@ -114,7 +114,8 @@ class OrchidAPI {
         modelTier: String = AppConstants.defaultModelTier,
         includeMemory: Bool = AppConstants.defaultIncludeMemory,
         maxTokens: Int = AppConstants.defaultMaxTokens,
-        temperature: Double = AppConstants.defaultTemperature
+        temperature: Double = AppConstants.defaultTemperature,
+        images: [String] = []
     ) async throws -> ChatResponse {
         let request = ChatRequest(
             message: message,
@@ -123,7 +124,8 @@ class OrchidAPI {
             includeMemory: includeMemory,
             maxTokens: maxTokens,
             temperature: temperature,
-            stream: false
+            stream: false,
+            images: images
         )
 
         guard let url = URL(string: serverURL + AppConstants.apiBasePath + AppConstants.chatEndpoint) else {
@@ -166,7 +168,8 @@ class OrchidAPI {
         modelTier: String = AppConstants.defaultModelTier,
         includeMemory: Bool = AppConstants.defaultIncludeMemory,
         maxTokens: Int = AppConstants.defaultMaxTokens,
-        temperature: Double = AppConstants.defaultTemperature
+        temperature: Double = AppConstants.defaultTemperature,
+        images: [String] = []
     ) -> AsyncThrowingStream<StreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -178,10 +181,11 @@ class OrchidAPI {
                         includeMemory: includeMemory,
                         maxTokens: maxTokens,
                         temperature: temperature,
-                        stream: true
+                        stream: true,
+                        images: images
                     )
 
-                    guard let url = URL(string: serverURL + AppConstants.apiBasePath + AppConstants.chatEndpoint) else {
+                    guard let url = URL(string: serverURL + AppConstants.apiBasePath + AppConstants.streamEndpoint) else {
                         throw APIError.invalidURL
                     }
 
@@ -371,6 +375,183 @@ class OrchidAPI {
         } catch {
             throw APIError.decodingError
         }
+    }
+
+    // MARK: - Research (Self-Improvement)
+
+    func getResearchStatus() async throws -> ResearchStatusResponse {
+        guard let url = URL(string: serverURL + "/api/v1/research/status") else {
+            throw APIError.invalidURL
+        }
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw APIError.invalidResponse
+        }
+
+        return try decoder.decode(ResearchStatusResponse.self, from: data)
+    }
+
+    func startResearch(maxExperiments: Int = 50, maxHours: Double = 8.0) async throws -> ResearchStartResponse {
+        guard let url = URL(string: serverURL + "/api/v1/research/start") else {
+            throw APIError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["max_experiments": maxExperiments, "max_hours": maxHours]
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw APIError.invalidResponse
+        }
+
+        return try decoder.decode(ResearchStartResponse.self, from: data)
+    }
+
+    func stopResearch() async throws {
+        guard let url = URL(string: serverURL + "/api/v1/research/stop") else {
+            throw APIError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+
+        let (_, response) = try await session.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw APIError.invalidResponse
+        }
+    }
+
+    func runSelfTest() async throws -> SelfTestResponse {
+        guard let url = URL(string: serverURL + "/api/v1/research/self-test") else {
+            throw APIError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 120  // Self-tests can take a while
+
+        let (data, response) = try await session.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw APIError.invalidResponse
+        }
+
+        return try decoder.decode(SelfTestResponse.self, from: data)
+    }
+}
+
+// MARK: - Research API Models
+
+struct ResearchStatusResponse: Codable {
+    let running: Bool
+    let stats: ResearchStats?
+    let recentExperiments: [ExperimentEntry]?
+    let bestExperiments: [ExperimentEntry]?
+
+    enum CodingKeys: String, CodingKey {
+        case running, stats
+        case recentExperiments = "recent_experiments"
+        case bestExperiments = "best_experiments"
+    }
+}
+
+struct ResearchStats: Codable {
+    let totalExperiments: Int?
+    let kept: Int?
+    let discarded: Int?
+    let errors: Int?
+    let keepRate: Double?
+    let totalImprovement: Double?
+    let totalRuntimeHours: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case kept, discarded, errors
+        case totalExperiments = "total_experiments"
+        case keepRate = "keep_rate"
+        case totalImprovement = "total_improvement"
+        case totalRuntimeHours = "total_runtime_hours"
+    }
+}
+
+struct ExperimentEntry: Codable, Identifiable {
+    let experimentId: String
+    let timestamp: String?
+    let hypothesis: String?
+    let targetFile: String?
+    let modificationType: String?
+    let baselineScore: Double?
+    let experimentScore: Double?
+    let improvement: Double?
+    let verdict: String?
+    let kept: Bool?
+    let durationSeconds: Double?
+
+    var id: String { experimentId }
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp, hypothesis, verdict, kept, improvement
+        case experimentId = "experiment_id"
+        case targetFile = "target_file"
+        case modificationType = "modification_type"
+        case baselineScore = "baseline_score"
+        case experimentScore = "experiment_score"
+        case durationSeconds = "duration_seconds"
+    }
+}
+
+struct ResearchStartResponse: Codable {
+    let status: String
+    let taskId: String?
+    let maxExperiments: Int?
+    let maxHours: Double?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, message
+        case taskId = "task_id"
+        case maxExperiments = "max_experiments"
+        case maxHours = "max_hours"
+    }
+}
+
+struct SelfTestResponse: Codable {
+    let aggregateScore: Double
+    let testsPassed: Int
+    let testsTotal: Int
+    let passRate: Double
+    let totalDurationMs: Double?
+    let failures: [TestFailure]?
+
+    enum CodingKeys: String, CodingKey {
+        case failures
+        case aggregateScore = "aggregate_score"
+        case testsPassed = "tests_passed"
+        case testsTotal = "tests_total"
+        case passRate = "pass_rate"
+        case totalDurationMs = "total_duration_ms"
+    }
+}
+
+struct TestFailure: Codable {
+    let name: String
+    let category: String?
+    let error: String?
+    let durationMs: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case name, category, error
+        case durationMs = "duration_ms"
     }
 }
 

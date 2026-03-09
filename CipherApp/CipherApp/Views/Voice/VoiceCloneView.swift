@@ -139,7 +139,7 @@ struct VoiceCloneView: View {
                     privacyPoint(
                         number: "2",
                         title: "Secure Transmission",
-                        description: "Encrypted samples sent to Orchid for neural voice cloning"
+                        description: "Encrypted samples sent to Cipher for neural voice cloning"
                     )
 
                     privacyPoint(
@@ -563,7 +563,7 @@ struct VoiceCloneView: View {
 
         Task {
             do {
-                let voiceId = try await OrchidAPI.shared.cloneVoice(
+                let voiceId = try await CipherAPI.shared.cloneVoice(
                     audioData: audioData,
                     name: "My Voice"
                 )
