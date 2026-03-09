@@ -10,7 +10,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from app.agents.models import AgentCapability, AgentResult, AgentStatus, AgentTask
+from app.agents.models import (
+    AgentCapability, AgentResult, AgentSignal, AgentStatus, AgentTask,
+    RiskLevel, SignalDirection,
+)
 from app.core.logging import logger
 
 # Type for progress callbacks: async fn(message: str) -> None
@@ -195,6 +198,63 @@ class BaseAgent(ABC):
 
         return result
 
+    # ── Structured Signal Generation ────────────────────────────────
+
+    def build_signal(
+        self,
+        signal: SignalDirection = SignalDirection.EXECUTE,
+        confidence: float = 0.5,
+        reasoning: str = "",
+        data: dict = None,
+        risk_level: RiskLevel = RiskLevel.LOW,
+        sources: list[str] = None,
+        warnings: list[str] = None,
+        suggested_followup: list[str] = None,
+    ) -> AgentSignal:
+        """
+        Build a structured signal from this agent's analysis.
+        Inspired by ai-hedge-fund's typed signal pattern.
+
+        Every agent can produce a signal with confidence, reasoning,
+        and risk assessment for downstream aggregation.
+        """
+        return AgentSignal(
+            agent_name=self.name,
+            signal=signal,
+            confidence=confidence,
+            reasoning=reasoning,
+            data=data or {},
+            risk_level=risk_level,
+            sources=sources or [],
+            warnings=warnings or [],
+            suggested_followup=suggested_followup or [],
+        )
+
+    def default_fallback_result(self, task: AgentTask, error: str = "LLM or API unavailable") -> AgentResult:
+        """
+        Return a graceful fallback result when the primary execution path fails.
+        Inspired by ai-hedge-fund's default_factory pattern — agents never crash,
+        they degrade gracefully with a clear explanation.
+        """
+        return AgentResult(
+            task_id=task.task_id,
+            agent_name=self.name,
+            success=False,
+            output=None,
+            error=error,
+            execution_time_ms=0,
+            verified=False,
+            verification_notes="Fallback result — primary execution path unavailable",
+            signal=self.build_signal(
+                signal=SignalDirection.HOLD,
+                confidence=0.0,
+                reasoning=f"Agent {self.name} could not execute: {error}",
+                risk_level=RiskLevel.MEDIUM,
+                warnings=[error],
+                suggested_followup=["Retry with different parameters", "Try alternative agent"],
+            ),
+        )
+
     async def validate(self, task: AgentTask) -> bool:
         """
         Validate a task before execution.
@@ -319,27 +379,19 @@ class BaseAgent(ABC):
             logger.error(
                 f"[{self.name}] Task {task.task_id} timed out after {task.timeout_seconds}s"
             )
-            return AgentResult(
-                task_id=task.task_id,
-                agent_name=self.name,
-                success=False,
-                error=f"Task execution timed out after {task.timeout_seconds} seconds",
-                execution_time_ms=execution_time_ms,
-                verified=False,
+            fallback = self.default_fallback_result(
+                task, error=f"Task execution timed out after {task.timeout_seconds} seconds"
             )
+            fallback.execution_time_ms = execution_time_ms
+            return fallback
 
         except Exception as e:
             execution_time_ms = (time.time() - start_time) * 1000
             self.status = AgentStatus.FAILED
             logger.exception(f"[{self.name}] Task {task.task_id} failed with exception")
-            return AgentResult(
-                task_id=task.task_id,
-                agent_name=self.name,
-                success=False,
-                error=str(e),
-                execution_time_ms=execution_time_ms,
-                verified=False,
-            )
+            fallback = self.default_fallback_result(task, error=str(e))
+            fallback.execution_time_ms = execution_time_ms
+            return fallback
 
     def get_capability(self, name: str) -> Optional[AgentCapability]:
         """Get a specific capability by name."""

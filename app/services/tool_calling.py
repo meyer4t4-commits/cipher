@@ -929,14 +929,27 @@ async def _exec_delegate_to_agent(args: dict) -> str:
         # Execute via the executor
         result = await executor.execute(task)
 
-        return json.dumps({
+        response = {
             "agent": agent_name,
             "success": result.success,
             "output": str(result.output)[:5000] if result.output else None,
             "error": result.error,
             "execution_time_ms": result.execution_time_ms,
             "task_id": result.task_id,
-        })
+        }
+
+        # Include structured signal data if the agent produced one
+        if result.signal:
+            response["signal"] = {
+                "direction": result.signal.signal.value,
+                "confidence": result.signal.confidence,
+                "reasoning": result.signal.reasoning[:500] if result.signal.reasoning else "",
+                "risk_level": result.signal.risk_level.value,
+                "warnings": result.signal.warnings[:5],
+                "suggested_followup": result.signal.suggested_followup[:3],
+            }
+
+        return json.dumps(response)
 
     except Exception as e:
         logger.error(f"Agent delegation failed: {agent_name}: {e}")
@@ -1012,6 +1025,13 @@ async def _exec_chain_agents(args: dict) -> str:
                 "error": result.error,
                 "execution_time_ms": result.execution_time_ms,
             }
+            # Include signal if the agent produced one
+            if result.signal:
+                step_result["signal"] = {
+                    "direction": result.signal.signal.value,
+                    "confidence": result.signal.confidence,
+                    "risk_level": result.signal.risk_level.value,
+                }
             chain_results.append(step_result)
 
             # Feed output to next step

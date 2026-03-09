@@ -27,6 +27,7 @@ from app.services.voice_personalities import get_personality_manager
 from app.services.tool_calling import CIPHER_TOOLS, execute_tool
 from app.services.vision_service import analyze_images, build_vision_messages
 from app.services.fact_checker import validate_response
+from app.agents.models import AgentSignal, RiskLevel, SignalDirection
 
 # Import the comprehensive system prompt from the dedicated module
 from app.core.system_prompt import CIPHER_SYSTEM_PROMPT
@@ -297,6 +298,57 @@ YOUR DATA IS LIVE. YOUR AGENTS ARE REAL. USE THEM. NEVER HALLUCINATE.
 """
 
 
+def _assess_tool_risk(tool_name: str, tool_args: dict) -> RiskLevel:
+    """
+    Risk validation gate — assess the risk level of a tool call before execution.
+    Inspired by ai-hedge-fund's risk manager pattern.
+
+    HIGH risk actions get logged prominently. CRITICAL actions would require
+    confirmation (future: push notification to iOS for approval).
+    """
+    # Destructive file operations
+    if tool_name == "run_shell":
+        cmd = tool_args.get("command", "").lower()
+        destructive_patterns = ["rm -rf", "drop table", "delete from", "format", "mkfs", "dd if="]
+        if any(p in cmd for p in destructive_patterns):
+            return RiskLevel.CRITICAL
+        sensitive_patterns = ["sudo", "chmod", "chown", "kill", "pkill", "systemctl"]
+        if any(p in cmd for p in sensitive_patterns):
+            return RiskLevel.HIGH
+        return RiskLevel.LOW
+
+    # Self-modification
+    if tool_name == "self_update":
+        action = tool_args.get("action", "")
+        if action in ("write", "patch"):
+            return RiskLevel.HIGH
+        return RiskLevel.LOW
+
+    # Agent delegation — medium risk (agents have their own validation)
+    if tool_name == "delegate_to_agent":
+        return RiskLevel.MEDIUM
+
+    # Communication — sending messages externally
+    if tool_name == "delegate_to_agent":
+        agent = tool_args.get("agent_name", "")
+        if agent in ("communication_agent", "outreach_agent"):
+            return RiskLevel.HIGH
+        return RiskLevel.MEDIUM
+
+    # Chain execution — aggregate risk
+    if tool_name == "chain_agents":
+        return RiskLevel.MEDIUM
+
+    # Browser — interacting with external sites
+    if tool_name == "browser":
+        action = tool_args.get("action", "")
+        if action in ("login", "type", "click"):
+            return RiskLevel.MEDIUM
+        return RiskLevel.LOW
+
+    return RiskLevel.LOW
+
+
 async def process_chat(
     request: ChatRequest,
     db: Session,
@@ -505,8 +557,21 @@ async def process_chat(
 
             logger.info(f"Tool call round {round_num + 1}: {tool_name}({json.dumps(tool_args)[:100]})")
 
-            # Execute the tool
-            tool_result = await execute_tool(tool_name, tool_args)
+            # RISK VALIDATION GATE — assess before executing
+            risk = _assess_tool_risk(tool_name, tool_args)
+            if risk == RiskLevel.CRITICAL:
+                logger.warning(f"CRITICAL risk tool blocked: {tool_name}({json.dumps(tool_args)[:100]})")
+                tool_result = json.dumps({
+                    "error": "This action was blocked by the risk validation gate (CRITICAL risk). "
+                             "Destructive operations require explicit operator confirmation.",
+                    "risk_level": "critical",
+                    "tool": tool_name,
+                })
+            else:
+                if risk == RiskLevel.HIGH:
+                    logger.warning(f"HIGH risk tool executing: {tool_name} — monitoring closely")
+                # Execute the tool
+                tool_result = await execute_tool(tool_name, tool_args)
 
             # VALIDATION GATE: Check if the tool result indicates an error.
             # If it does, log it clearly so the LLM can decide to retry or pivot.
@@ -527,6 +592,7 @@ async def process_chat(
                 "result_preview": tool_result[:200] if tool_result else "",
                 "round": round_num + 1,
                 "had_error": is_error,
+                "risk_level": risk.value,
             })
 
             # Add tool result to messages — the LLM will see error details
