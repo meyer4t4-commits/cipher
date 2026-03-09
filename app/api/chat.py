@@ -147,8 +147,22 @@ async def stream_message(request: ChatRequest, db: Session = Depends(get_db)):
                 yield f"data: {_json.dumps({'type': 'token', 'content': chunk})}\n\n"
                 await asyncio.sleep(0.01)
 
+            # Send images if any were generated
+            if response.images:
+                for img in response.images:
+                    yield f"data: {_json.dumps({'type': 'image', 'url': img.url or '', 'mime_type': img.mime_type or 'image/png', 'analysis': img.analysis or ''})}\n\n"
+
             # Metadata at end
-            yield f"data: {_json.dumps({'type': 'metadata', 'model_used': response.model_used or 'unknown', 'tokens_used': response.tokens_used or 0, 'cost_usd': response.cost_usd or 0.0, 'conversation_id': response.conversation_id or ''})}\n\n"
+            meta = {
+                'type': 'metadata',
+                'model_used': response.model_used or 'unknown',
+                'tokens_used': response.tokens_used or 0,
+                'cost_usd': response.cost_usd or 0.0,
+                'conversation_id': response.conversation_id or '',
+                'confidence_score': response.confidence_score,
+                'has_images': len(response.images) if response.images else 0,
+            }
+            yield f"data: {_json.dumps(meta)}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:

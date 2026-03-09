@@ -456,6 +456,13 @@ async def process_chat(
                 )
 
     # 5. Build message list from conversation history
+    #    CONTEXT WINDOW GUARD: Estimate token count and truncate history
+    #    to prevent context overflow on long prompts.
+    #    Rule of thumb: 1 token ≈ 4 characters. Reserve 8K tokens for
+    #    system prompt + enrichments + output.
+    MAX_CONTEXT_CHARS = 600_000  # ~150K tokens — safe for most models
+    RESERVED_CHARS = 32_000     # ~8K tokens for system prompt + output
+
     messages = []
     history = (
         db.query(MessageRecord)
@@ -465,8 +472,24 @@ async def process_chat(
         .all()
     )
 
-    for msg in history:
-        messages.append({"role": msg.role, "content": msg.content})
+    # Estimate user message + enrichment size
+    user_msg_chars = len(request.message) + len(live_data_context) + len(memory_context)
+    budget = MAX_CONTEXT_CHARS - RESERVED_CHARS - user_msg_chars
+
+    # Add history from newest to oldest, then reverse (keeps most recent context)
+    history_msgs = [{"role": msg.role, "content": msg.content} for msg in history]
+    trimmed = []
+    running_chars = 0
+    for msg in reversed(history_msgs):
+        msg_chars = len(msg.get("content", ""))
+        if running_chars + msg_chars > budget:
+            break
+        trimmed.append(msg)
+        running_chars += msg_chars
+    messages = list(reversed(trimmed))
+
+    if len(messages) < len(history_msgs):
+        logger.info(f"Context guard: trimmed history from {len(history_msgs)} to {len(messages)} messages")
 
     # Enrich user message with live data + memory
     enriched_message = request.message
@@ -763,12 +786,28 @@ async def process_chat(
 
     # 12. Extract any image URLs from the response (e.g., from image_agent)
     response_images = []
-    # Check tool execution log for image generation results
     for log_entry in tool_execution_log:
-        if log_entry.get("tool") == "delegate_to_agent":
-            result_preview = log_entry.get("result_preview", "")
+        tool = log_entry.get("tool", "")
+        result_preview = log_entry.get("result_preview", "")
+
+        # Direct generate_image tool — parse the structured JSON result
+        if tool == "generate_image" and not log_entry.get("had_error"):
+            try:
+                parsed_result = json.loads(result_preview) if len(result_preview) < 200 else {}
+                # The full result is in the tool messages — but the preview has URLs
+                # Extract from image_urls array or saved_locally paths
+                for url in parsed_result.get("image_urls", []):
+                    if url:
+                        response_images.append(ImageAttachment(url=url))
+                for path in parsed_result.get("saved_locally", []):
+                    if path:
+                        response_images.append(ImageAttachment(url=path))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Also check delegate_to_agent for image results
+        if tool == "delegate_to_agent":
             if "image" in result_preview.lower() and ("http" in result_preview or "data/" in result_preview):
-                # Try to extract image path from agent result
                 import re as _re
                 url_match = _re.search(r'(https?://\S+\.(?:png|jpg|jpeg|webp|gif))', result_preview)
                 path_match = _re.search(r'(data/\S+\.(?:png|jpg|jpeg|webp|gif))', result_preview)
@@ -776,6 +815,13 @@ async def process_chat(
                     response_images.append(ImageAttachment(url=url_match.group(1)))
                 elif path_match:
                     response_images.append(ImageAttachment(url=path_match.group(1)))
+
+        # Also scan any tool result for DALL-E / oaidalleapiprodscus URLs
+        if "oaidalleapiprodscus" in result_preview or "replicate.delivery" in result_preview:
+            import re as _re
+            for url in _re.findall(r'(https?://[^\s"\']+)', result_preview):
+                if any(ext in url.lower() for ext in ['.png', '.jpg', '.jpeg', '.webp']) or 'oaidalleapiprodscus' in url:
+                    response_images.append(ImageAttachment(url=url))
 
     return ChatResponse(
         message=result["content"],
