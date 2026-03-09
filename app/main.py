@@ -102,8 +102,12 @@ async def lifespan(app: FastAPI):
         os.environ['NEWSAPI_KEY'] = settings.newsapi_key
         logger.info("NewsAPI: ACTIVE")
 
-    init_db()
-    logger.info("Database initialized")
+    try:
+        init_db()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.error(f"Database init failed: {e} — app will continue but DB features may be limited")
+        logger.error("If on Railway, ensure volume is mounted at /app/data or set DATABASE_URL to PostgreSQL")
     providers = []
     if settings.anthropic_api_key:
         providers.append("Anthropic")
