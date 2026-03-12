@@ -195,7 +195,7 @@ class DataAgent(BaseAgent):
                 task_id=task.task_id,
                 agent_name=self.name,
                 success=False,
-                error="Database engine not available",
+                error="Database engine not available. The DATABASE_URL environment variable may not be configured, or SQLAlchemy is not installed. SQL queries require a connected database.",
             )
         except Exception as e:
             return AgentResult(

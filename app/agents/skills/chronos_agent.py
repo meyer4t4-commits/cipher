@@ -457,58 +457,131 @@ class ChronosAgent(BaseAgent):
     async def _sync_calendars(self, task: AgentTask) -> AgentResult:
         """
         Sync between Apple Calendar and Google Calendar.
-        Currently a placeholder; real API integration (EventKit, Google Calendar API)
-        will be wired when running on-device.
+        Requires Google Calendar API credentials (OAuth) to be configured.
 
         Args:
             task: Task with source, destination, direction
 
         Returns:
-            AgentResult with sync details
+            AgentResult with sync details or configuration instructions
         """
         source = task.params.get("source", "apple")
         destination = task.params.get("destination", "google")
         direction = task.params.get("direction", "bidirectional")
 
-        sync_data = json.loads(self.calendar_sync_file.read_text())
+        # Check for Google Calendar API credentials
+        google_creds = getattr(settings, 'google_calendar_credentials', '') or ''
 
-        # Placeholder: In production, this would:
-        # 1. Connect to Apple EventKit (on-device, requires permission)
-        # 2. Connect to Google Calendar API (requires OAuth)
-        # 3. Map events and handle conflicts
-        # 4. Sync in specified direction
+        if not google_creds:
+            output = {
+                "operation": "sync_calendars",
+                "source": source,
+                "destination": destination,
+                "direction": direction,
+                "status": "not_configured",
+                "error": "Calendar sync requires Google Calendar API credentials which are not configured.",
+                "setup_instructions": [
+                    "1. Go to console.cloud.google.com and create a project",
+                    "2. Enable the Google Calendar API",
+                    "3. Create OAuth 2.0 credentials",
+                    "4. Set GOOGLE_CALENDAR_CREDENTIALS environment variable with the JSON credentials",
+                ],
+                "note": "Local time blocking, conflict detection, and daily planning all work without this — only cross-calendar sync requires Google API setup.",
+            }
 
-        sync_result = {
-            "synced_at": datetime.utcnow().isoformat(),
-            "source": source,
-            "destination": destination,
-            "direction": direction,
-            "events_synced": 0,
-            "conflicts_resolved": 0,
-            "note": "Live API integration pending on-device setup",
-        }
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                output=output,
+                error="Calendar sync not configured — Google Calendar API credentials required",
+            )
 
-        sync_data["synced_events"].append(sync_result)
-        sync_data["last_sync"] = datetime.utcnow().isoformat()
-        self.calendar_sync_file.write_text(json.dumps(sync_data, indent=2))
+        # If credentials exist, attempt real Google Calendar sync
+        try:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
 
-        logger.info(f"Calendar sync queued: {source} <-> {destination} ({direction})")
+            creds_data = json.loads(google_creds)
+            creds = Credentials.from_authorized_user_info(creds_data)
+            service = build('calendar', 'v3', credentials=creds)
 
-        output = {
-            "operation": "sync_calendars",
-            "source": source,
-            "destination": destination,
-            "direction": direction,
-            "status": "queued",
-            "message": "Sync operation recorded. API integration pending on-device setup.",
-        }
+            # Fetch events from Google Calendar
+            now = datetime.utcnow().isoformat() + 'Z'
+            events_result = service.events().list(
+                calendarId='primary',
+                timeMin=now,
+                maxResults=50,
+                singleEvents=True,
+                orderBy='startTime',
+            ).execute()
+            google_events = events_result.get('items', [])
 
-        return AgentResult(
-            task_id=task.task_id,
-            agent_name=self.name,
-            success=True,
-            output=output,
-        )
+            # Load local events
+            local_events = json.loads(self.events_file.read_text()) if self.events_file.exists() else []
+
+            synced_count = 0
+            if direction in ("bidirectional", "pull"):
+                # Pull Google events into local schedule
+                for g_event in google_events:
+                    local_events.append({
+                        "id": g_event.get("id", ""),
+                        "title": g_event.get("summary", "Untitled"),
+                        "start": g_event.get("start", {}).get("dateTime", ""),
+                        "end": g_event.get("end", {}).get("dateTime", ""),
+                        "source": "google_calendar",
+                    })
+                    synced_count += 1
+
+                self.events_file.write_text(json.dumps(local_events, indent=2))
+
+            sync_data = json.loads(self.calendar_sync_file.read_text())
+            sync_result = {
+                "synced_at": datetime.utcnow().isoformat(),
+                "source": source,
+                "destination": destination,
+                "direction": direction,
+                "events_synced": synced_count,
+                "conflicts_resolved": 0,
+            }
+            sync_data["synced_events"].append(sync_result)
+            sync_data["last_sync"] = datetime.utcnow().isoformat()
+            self.calendar_sync_file.write_text(json.dumps(sync_data, indent=2))
+
+            output = {
+                "operation": "sync_calendars",
+                "source": source,
+                "destination": destination,
+                "direction": direction,
+                "status": "completed",
+                "events_synced": synced_count,
+                "message": f"Successfully synced {synced_count} events from Google Calendar",
+            }
+
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=True,
+                output=output,
+            )
+
+        except ImportError:
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                output={"error": "Google Calendar API library not installed. Run: pip install google-api-python-client google-auth"},
+                error="Missing google-api-python-client dependency",
+            )
+        except Exception as e:
+            logger.error(f"Google Calendar sync failed: {e}")
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                output={"error": str(e)},
+                error=f"Calendar sync failed: {e}",
+            )
 
     def _get_energy_level(self, hour: int) -> str:
         """Get energy level for a given hour."""

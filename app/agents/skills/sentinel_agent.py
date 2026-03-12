@@ -109,7 +109,7 @@ class SentinelAgent(BaseAgent):
 
     name = "sentinel_agent"
     description = "Proactive alert system — monitors email and SMS, predicts needs, and takes preemptive action"
-    version = "1.0.0"
+    version = "2.0.0"
 
     def __init__(self):
         """Initialize Sentinel Agent with capabilities."""
@@ -200,12 +200,20 @@ class SentinelAgent(BaseAgent):
     async def _monitor_email(self) -> Dict[str, Any]:
         """Monitor email inbox for urgent items and deadlines."""
         try:
-            # Try to connect via IMAP if configured
-            if hasattr(settings, 'imap_host') and settings.imap_host:
-                alerts = await self._fetch_email_via_imap()
-            else:
-                logger.warning("IMAP not configured, using mock email data")
-                alerts = self._generate_mock_email_data()
+            # Require real IMAP credentials
+            imap_user = getattr(settings, 'imap_user', '') or ''
+            imap_pass = getattr(settings, 'imap_pass', '') or ''
+            imap_host = getattr(settings, 'imap_host', '') or ''
+
+            if not imap_user or not imap_pass:
+                return {
+                    "source": "email",
+                    "error": "Email monitoring not configured. Set IMAP_HOST, IMAP_USER, and IMAP_PASS environment variables to enable real inbox monitoring.",
+                    "status": "not_configured",
+                    "setup_hint": "For Gmail: use an App Password (not your regular password) with IMAP_HOST=imap.gmail.com",
+                }
+
+            alerts = await self._fetch_email_via_imap()
 
             # Store alerts
             self._save_alerts(alerts)
@@ -221,50 +229,128 @@ class SentinelAgent(BaseAgent):
 
     async def _fetch_email_via_imap(self) -> List[AlertEntry]:
         """Fetch emails via IMAP and score for urgency."""
-        # Placeholder: Real implementation would connect to IMAP server
-        # This demonstrates the pattern; actual IMAP logic would go here
-        logger.debug("Fetching emails via IMAP")
-        alerts = []
-        # Implementation would iterate through unread emails, score them, extract deadlines, categorize
+        import imaplib
+        import email as email_lib
+        from email.header import decode_header
+
+        logger.info("Connecting to IMAP server to fetch emails")
+        alerts: List[AlertEntry] = []
+
+        try:
+            # Connect to IMAP
+            imap = imaplib.IMAP4_SSL(settings.imap_host)
+            imap.login(settings.imap_user, settings.imap_pass)
+            imap.select("INBOX")
+
+            # Search for recent unread emails (last 3 days)
+            since_date = (datetime.utcnow() - timedelta(days=3)).strftime("%d-%b-%Y")
+            status, message_ids = imap.search(None, f'(UNSEEN SINCE {since_date})')
+
+            if status != "OK" or not message_ids[0]:
+                imap.logout()
+                return alerts
+
+            ids = message_ids[0].split()[-20:]  # Last 20 unread
+
+            for msg_id in ids:
+                try:
+                    status, msg_data = imap.fetch(msg_id, "(RFC822)")
+                    if status != "OK" or not msg_data[0]:
+                        continue
+
+                    raw_email = msg_data[0][1]
+                    msg = email_lib.message_from_bytes(raw_email)
+
+                    # Decode subject
+                    subject_raw = msg.get("Subject", "")
+                    decoded_parts = decode_header(subject_raw)
+                    subject = ""
+                    for part, enc in decoded_parts:
+                        if isinstance(part, bytes):
+                            subject += part.decode(enc or "utf-8", errors="replace")
+                        else:
+                            subject += part
+
+                    sender = msg.get("From", "unknown")
+
+                    # Extract body preview
+                    body_preview = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                payload = part.get_payload(decode=True)
+                                if payload:
+                                    body_preview = payload.decode("utf-8", errors="replace")[:500]
+                                    break
+                    else:
+                        payload = msg.get_payload(decode=True)
+                        if payload:
+                            body_preview = payload.decode("utf-8", errors="replace")[:500]
+
+                    # Score and categorize
+                    urgency = self._score_alert(subject, body_preview, sender)
+                    category = self._categorize_alert(subject, body_preview)
+                    deadline = self._extract_deadline(f"{subject} {body_preview}")
+
+                    alert = AlertEntry(
+                        id=f"email_{msg_id.decode()}",
+                        source="email",
+                        subject=subject,
+                        sender=sender,
+                        body_preview=body_preview[:200],
+                        urgency_score=urgency,
+                        category=category,
+                        detected_deadline=deadline,
+                        recommended_action=self._suggest_action(category, urgency),
+                        status="new",
+                    )
+                    alerts.append(alert)
+
+                except Exception as e:
+                    logger.warning(f"Failed to parse email {msg_id}: {e}")
+                    continue
+
+            imap.logout()
+            logger.info(f"Fetched {len(alerts)} alerts from IMAP")
+
+        except imaplib.IMAP4.error as e:
+            logger.error(f"IMAP connection/auth failed: {e}")
+            raise RuntimeError(f"IMAP error: {e}")
+        except Exception as e:
+            logger.error(f"Email fetch failed: {e}")
+            raise
+
         return alerts
 
-    def _generate_mock_email_data(self) -> List[AlertEntry]:
-        """Generate mock email data for testing."""
-        return [
-            AlertEntry(
-                id="email_001",
-                source="email",
-                subject="Invoice #12345 - Payment Due Today",
-                sender="billing@client.com",
-                body_preview="Your invoice is due today. Please remit payment immediately.",
-                urgency_score=0.95,
-                category="financial",
-                detected_deadline=datetime.utcnow(),
-                recommended_action="Review invoice and process payment",
-                status="new",
-            ),
-            AlertEntry(
-                id="email_002",
-                source="email",
-                subject="Meeting Rescheduled - Confirm New Time",
-                sender="colleague@company.com",
-                body_preview="Can we move our Thursday meeting to Friday at 2pm?",
-                urgency_score=0.65,
-                category="scheduling",
-                recommended_action="Confirm availability for new meeting time",
-                status="new",
-            ),
-        ]
+    def _suggest_action(self, category: str, urgency: float) -> str:
+        """Suggest an action based on category and urgency."""
+        actions = {
+            "financial": "Review and process payment or financial item",
+            "scheduling": "Confirm availability and respond to scheduling request",
+            "business": "Review business item and prepare response",
+            "personal": "Review personal item and take action",
+            "real_estate": "Review property-related item and respond",
+        }
+        base = actions.get(category, "Review and respond as needed")
+        if urgency > 0.8:
+            return f"URGENT: {base}"
+        return base
 
     async def _monitor_sms(self) -> Dict[str, Any]:
         """Monitor SMS messages for time-sensitive communications."""
         try:
-            if hasattr(settings, 'twilio_account_sid') and settings.twilio_account_sid:
-                alerts = await self._fetch_sms_via_twilio()
-            else:
-                logger.warning("Twilio not configured, using mock SMS data")
-                alerts = self._generate_mock_sms_data()
+            twilio_sid = getattr(settings, 'twilio_account_sid', '') or ''
+            twilio_token = getattr(settings, 'twilio_auth_token', '') or ''
 
+            if not twilio_sid or not twilio_token:
+                return {
+                    "source": "sms",
+                    "error": "SMS monitoring not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables to enable real SMS monitoring.",
+                    "status": "not_configured",
+                    "setup_hint": "Sign up at twilio.com and add your credentials to enable SMS monitoring.",
+                }
+
+            alerts = await self._fetch_sms_via_twilio()
             self._save_alerts(alerts)
             return {
                 "source": "sms",
@@ -277,28 +363,63 @@ class SentinelAgent(BaseAgent):
             return {"source": "sms", "error": str(e), "status": "failed"}
 
     async def _fetch_sms_via_twilio(self) -> List[AlertEntry]:
-        """Fetch SMS via Twilio API and parse for urgency."""
-        logger.debug("Fetching SMS via Twilio")
-        alerts = []
-        # Implementation would connect to Twilio, fetch messages, parse for urgency signals
-        return alerts
+        """Fetch recent SMS via Twilio REST API and score for urgency."""
+        import httpx
 
-    def _generate_mock_sms_data(self) -> List[AlertEntry]:
-        """Generate mock SMS data for testing."""
-        return [
-            AlertEntry(
-                id="sms_001",
-                source="sms",
-                subject="Appointment Reminder",
-                sender="+1234567890",
-                body_preview="Reminder: Your appointment is tomorrow at 2pm. Reply to confirm.",
-                urgency_score=0.70,
-                category="personal",
-                detected_deadline=datetime.utcnow() + timedelta(days=1),
-                recommended_action="Confirm appointment attendance",
-                status="new",
-            ),
-        ]
+        twilio_sid = getattr(settings, 'twilio_account_sid', '') or ''
+        twilio_token = getattr(settings, 'twilio_auth_token', '') or ''
+
+        logger.info("Fetching SMS messages from Twilio API")
+        alerts: List[AlertEntry] = []
+
+        try:
+            since_date = (datetime.utcnow() - timedelta(days=3)).strftime("%Y-%m-%d")
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json",
+                    auth=(twilio_sid, twilio_token),
+                    params={
+                        "DateSent>": since_date,
+                        "PageSize": 20,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            for msg in data.get("messages", []):
+                # Only process inbound messages
+                if msg.get("direction") not in ("inbound",):
+                    continue
+
+                body = msg.get("body", "")
+                sender = msg.get("from", "unknown")
+                sid = msg.get("sid", "")
+
+                urgency = self._score_alert("", body, sender)
+                category = self._categorize_alert("", body)
+                deadline = self._extract_deadline(body)
+
+                alert = AlertEntry(
+                    id=f"sms_{sid[-8:]}",
+                    source="sms",
+                    subject=f"SMS from {sender}",
+                    sender=sender,
+                    body_preview=body[:200],
+                    urgency_score=urgency,
+                    category=category,
+                    detected_deadline=deadline,
+                    recommended_action=self._suggest_action(category, urgency),
+                    status="new",
+                )
+                alerts.append(alert)
+
+            logger.info(f"Fetched {len(alerts)} SMS alerts from Twilio")
+
+        except Exception as e:
+            logger.error(f"Twilio SMS fetch failed: {e}")
+            raise RuntimeError(f"Twilio error: {e}")
+
+        return alerts
 
     async def _predict_needs(self) -> Dict[str, Any]:
         """Analyze alert patterns to predict upcoming needs."""
