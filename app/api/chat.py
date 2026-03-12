@@ -107,25 +107,61 @@ async def send_message(
 async def stream_message(request: ChatRequest, db: Session = Depends(get_db)):
     """
     Stream a response from Cipher token by token.
-    Sends keepalive pings while the orchestrator processes so iOS doesn't timeout.
+    Sends keepalive pings + status updates while the orchestrator processes.
+    Overall timeout: 180s to avoid silent drops.
     """
     import json as _json
     import asyncio
 
+    OVERALL_TIMEOUT = 180  # 3 minutes max
+
     async def event_generator():
         try:
-            # Send heartbeat IMMEDIATELY so iOS knows we're alive
+            # Send heartbeat IMMEDIATELY so client knows we're alive
             yield f"data: {_json.dumps({'type': 'token', 'content': ''})}\n\n"
 
-            # Run orchestrator in background, send keepalives every 5s
+            # Send a visible "thinking" status so the user knows something is happening
+            yield f"data: {_json.dumps({'type': 'status', 'content': 'Analyzing your request...'})}\n\n"
+
+            # Run orchestrator in background, send keepalives every 4s with status
             chat_task = asyncio.create_task(process_chat(request, db))
+            elapsed = 0
+            status_messages = [
+                (8, "Searching for information..."),
+                (15, "Processing with AI agents..."),
+                (25, "Running deep analysis..."),
+                (40, "Compiling results..."),
+                (60, "Almost done — finalizing response..."),
+                (90, "This is a complex request — still working..."),
+                (120, "Wrapping up..."),
+            ]
+            status_idx = 0
 
             while not chat_task.done():
                 try:
-                    await asyncio.wait_for(asyncio.shield(chat_task), timeout=5.0)
+                    await asyncio.wait_for(asyncio.shield(chat_task), timeout=4.0)
                 except asyncio.TimeoutError:
-                    # Still processing — keepalive so connection stays open
+                    elapsed += 4
+                    # Send status update if we've hit the next threshold
+                    while status_idx < len(status_messages) and elapsed >= status_messages[status_idx][0]:
+                        yield f"data: {_json.dumps({'type': 'status', 'content': status_messages[status_idx][1]})}\n\n"
+                        status_idx += 1
+                    # Always send keepalive
                     yield f"data: {_json.dumps({'type': 'token', 'content': ''})}\n\n"
+
+                    # Overall timeout — don't let it hang forever
+                    if elapsed >= OVERALL_TIMEOUT:
+                        chat_task.cancel()
+                        timeout_msg = (
+                            "This request took longer than expected. "
+                            "Try breaking it into smaller steps — for example, "
+                            "ask me to search first, then analyze the results."
+                        )
+                        for i in range(0, len(timeout_msg), 3):
+                            yield f"data: {_json.dumps({'type': 'token', 'content': timeout_msg[i:i+3]})}\n\n"
+                        yield f"data: {_json.dumps({'type': 'metadata', 'model_used': 'timeout', 'tokens_used': 0, 'cost_usd': 0.0, 'conversation_id': ''})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
 
             response = chat_task.result()
 
