@@ -158,3 +158,44 @@ class ServiceCredentialRecord(Base):
     last_used_at = Column(DateTime, nullable=True)
 
     project = relationship("ProjectRecord", back_populates="credentials")
+
+
+# ---------------------------------------------------------------------------
+# Error Tracking — Cipher learns from every failure
+# ---------------------------------------------------------------------------
+
+class ErrorLog(Base):
+    """Every error Cipher encounters, with diagnosis and fix history.
+    This is the learning backbone of the self-healing loop."""
+    __tablename__ = "error_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    error_type = Column(String(100), nullable=False, index=True)  # tool_failure, llm_error, agent_crash, import_error, api_timeout
+    source = Column(String(200), nullable=False)  # file:line or tool_name or agent_name
+    error_message = Column(Text, nullable=False)
+    stack_trace = Column(Text, nullable=True)
+    context = Column(Text, nullable=True)  # JSON: what was happening when it failed
+    diagnosis = Column(Text, nullable=True)  # What self-diagnostic found
+    fix_applied = Column(Text, nullable=True)  # What fix was attempted
+    fix_succeeded = Column(Boolean, nullable=True)  # Did the fix work?
+    recurrence_count = Column(Integer, default=1)  # How many times this exact error has occurred
+    last_seen = Column(DateTime, default=utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class SelfFixLog(Base):
+    """Record of every self-modification Cipher makes."""
+    __tablename__ = "self_fix_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    error_log_id = Column(String(36), ForeignKey("error_logs.id"), nullable=True)
+    file_path = Column(String(500), nullable=False)
+    action = Column(String(20), nullable=False)  # patch, write, rollback
+    old_content_hash = Column(String(64), nullable=True)
+    new_content_hash = Column(String(64), nullable=True)
+    description = Column(Text, nullable=False)
+    success = Column(Boolean, default=False)
+    verified = Column(Boolean, default=False)  # Did post-fix test pass?
+    rolled_back = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=utcnow)

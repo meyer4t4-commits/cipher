@@ -1,0 +1,736 @@
+================================================================================
+CIPHER BACKEND — ARCHITECTURE SUMMARY
+================================================================================
+
+PROJECT ROOT: /sessions/admiring-funny-gauss/mnt/cipher-app/
+ENTRY POINT:  /sessions/admiring-funny-gauss/mnt/cipher-app/app/main.py
+FRAMEWORK:    FastAPI (Python)
+VERSION:      1.0.0
+STATUS:       Production-Ready
+
+================================================================================
+1. DIRECTORY STRUCTURE
+================================================================================
+
+/app/
+├── main.py                       # FastAPI app setup, routers, lifespan
+├── __init__.py                   # Version info
+├── api/                          # REST API endpoints
+│   ├── chat.py                   # Chat, conversations, streaming
+│   ├── agents.py                 # 29 agent execution, spawn, approvals
+│   ├── voice.py                  # TTS, voice cloning, emotion, live voice
+│   ├── media.py                  # Image/video generation
+│   ├── scanner.py                # Intelligence scanning, briefings
+│   ├── memory.py                 # Vector memory (Chroma), recall
+│   ├── system.py                 # Health, prompts, admin
+│   ├── models.py                 # Model listing, health, usage
+│   ├── notifications.py          # Push/SMS device management
+│   ├── projects.py               # Project CRUD, credential vault
+│   ├── recommendations.py        # Agent recommendation engine
+│   ├── research.py               # Autonomous self-improvement
+│   ├── cron.py                   # Scheduled tasks management
+│   └── tasks.py                  # Background task queue
+├── gateway/                      # Premium tier system
+│   ├── api.py                    # Account, API keys, usage metering
+│   ├── auth.py                   # JWT, API key validation
+│   ├── models.py                 # Subscription tiers, limits
+│   ├── guards.py                 # Feature gating
+│   └── premium_routes.py         # Feature availability endpoint
+├── agents/                       # Agent framework (29 agents)
+│   ├── models.py                 # AgentTask, AgentResult, signals
+│   ├── __init__.py               # Registry, executor, manager
+│   ├── skills/                   # All 29 agent implementations
+│   └── supervisor.py             # Agent orchestration
+├── services/                     # Core services
+│   ├── orchestrator.py           # Main chat flow: detection → agent → LLM
+│   ├── llm_router.py             # Model selection, API routing
+│   ├── memory.py                 # Chroma vector DB interface
+│   ├── voice_service.py          # ElevenLabs TTS integration
+│   ├── emotion_service.py        # Audio emotion detection
+│   ├── live_voice.py             # Real-time voice sessions
+│   ├── vision_service.py         # Image analysis (Claude Vision)
+│   ├── classifier.py             # Intent classification
+│   ├── fact_checker.py           # Response validation
+│   ├── tool_calling.py           # Tool invocation framework
+│   ├── cron_registry.py          # Scheduled task registry
+│   ├── cache.py                  # Response caching layer
+│   ├── browser_service.py        # Playwright browser control
+│   ├── agent_interactions.py     # Clarifying questions queue
+│   ├── scanner/                  # Intelligence scanner
+│   │   ├── orchestrator.py       # Scanner coordination
+│   │   ├── sources/              # Data sources (NewsAPI, Twitter, etc.)
+│   │   └── briefing_generator.py # Briefing compilation
+│   └── self_research/            # Autonomous research engine
+├── db/                           # Database layer
+│   ├── database.py               # SQLAlchemy setup, session management
+│   ├── models.py                 # ORM models (conversations, usage, etc.)
+│   └── __init__.py
+├── models/                       # Pydantic schemas
+│   └── schemas.py                # ChatRequest, ChatResponse, etc.
+├── core/                         # Core utilities
+│   ├── config.py                 # Settings/environment loading
+│   ├── logging.py                # Structured logging
+│   ├── system_prompt.py          # Main Cipher system prompt
+│   └── security.py               # Password hashing, JWT creation
+└── bot/                          # Discord/Slack bot handlers
+
+
+================================================================================
+2. KEY ROUTERS & ENDPOINTS
+================================================================================
+
+MAIN ROUTES (Registered in main.py):
+
+Router                  Prefix          File
+─────────────────────────────────────────────────────────────────────────
+agents.router           /api/v1/agents  api/agents.py
+chat.router             /api/v1/chat    api/chat.py
+memory.router           /api/v1/memory  api/memory.py
+models.router           /api/v1/models  api/models.py
+system.router           /api/v1/system  api/system.py
+scanner.router          /scanner        api/scanner.py
+voice.router            /api/v1/voice   api/voice.py
+notifications.router    /api/v1/notifications  api/notifications.py
+recommendations.router  /api/v1/recommendations  api/recommendations.py
+media.router            /api/v1/media   api/media.py
+research.router         /api/v1/research  api/research.py
+cron.router             /api/v1/cron    api/cron.py
+projects.router         /api/v1/projects  api/projects.py
+gateway_router          /api/v1/gateway  gateway/api.py
+availability_router     /api/v1/features  gateway/premium_routes.py
+
+
+ENDPOINT SUMMARY BY CATEGORY:
+
+Chat (11 endpoints):
+  POST   /api/v1/chat/
+  POST   /api/v1/chat/stream
+  POST   /api/v1/chat/upload-image
+  GET    /api/v1/chat/conversations
+  GET    /api/v1/chat/conversations/{id}
+  DELETE /api/v1/chat/conversations/{id}
+
+Agents (23 endpoints):
+  POST   /api/v1/agents/execute
+  POST   /api/v1/agents/execute/stream
+  POST   /api/v1/agents/batch
+  POST   /api/v1/agents/spawn-batch
+  GET    /api/v1/agents/spawn-session/{id}
+  GET    /api/v1/agents/agents
+  GET    /api/v1/agents/capabilities
+  GET    /api/v1/agents/capabilities/{category}
+  GET    /api/v1/agents/status/{task_id}
+  GET    /api/v1/agents/status
+  GET    /api/v1/agents/history
+  GET    /api/v1/agents/approvals
+  POST   /api/v1/agents/approve/{task_id}
+  POST   /api/v1/agents/reject/{task_id}
+  POST   /api/v1/agents/cancel/{task_id}
+  GET    /api/v1/agents/interactions/pending
+  POST   /api/v1/agents/interactions/{id}/answer
+  POST   /api/v1/agents/interactions/{id}/dismiss
+  DELETE /api/v1/agents/history
+
+Voice (14 endpoints):
+  POST   /api/v1/voice/synthesize
+  POST   /api/v1/voice/synthesize/stream
+  POST   /api/v1/voice/clone
+  GET    /api/v1/voice/voices
+  GET    /api/v1/voice/voices/{id}
+  DELETE /api/v1/voice/voices/{id}
+  GET    /api/v1/voice/usage
+  POST   /api/v1/voice/analyze-emotion
+  GET    /api/v1/voice/emotion-history/{user_id}
+  POST   /api/v1/voice/live/start
+  POST   /api/v1/voice/live/turn
+  POST   /api/v1/voice/live/interrupt
+  POST   /api/v1/voice/live/end
+  GET    /api/v1/voice/live/sessions
+
+Media (4 endpoints):
+  POST   /api/v1/media/generate-image
+  POST   /api/v1/media/generate-video
+  POST   /api/v1/media/chain-video
+  GET    /api/v1/media/file/{filename}
+  GET    /api/v1/media/history
+
+Scanner (8 endpoints):
+  GET    /scanner/status
+  GET    /scanner/briefing
+  GET    /scanner/briefing/{date}
+  POST   /scanner/scan-now
+  POST   /scanner/briefing-now
+  GET    /scanner/config
+  PUT    /scanner/config
+  POST   /scanner/keywords
+  DELETE /scanner/keywords
+  GET    /scanner/health
+
+Memory (4 endpoints):
+  POST   /api/v1/memory/store
+  POST   /api/v1/memory/recall
+  GET    /api/v1/memory/stats
+  DELETE /api/v1/memory/{id}
+
+System (5 endpoints):
+  GET    /api/v1/system/health
+  GET    /api/v1/system/prompts
+  POST   /api/v1/system/prompts
+  DELETE /api/v1/system/prompts/{name}
+
+Models (3 endpoints):
+  GET    /api/v1/models/
+  GET    /api/v1/models/health
+  GET    /api/v1/models/usage
+
+Notifications (6 endpoints):
+  POST   /api/v1/notifications/register-device
+  DELETE /api/v1/notifications/unregister-device
+  GET    /api/v1/notifications/devices
+  POST   /api/v1/notifications/test
+  GET    /api/v1/notifications/preferences
+  PUT    /api/v1/notifications/preferences
+
+Projects (8 endpoints):
+  GET    /api/v1/projects/
+  POST   /api/v1/projects/
+  GET    /api/v1/projects/{id}
+  PATCH  /api/v1/projects/{id}
+  DELETE /api/v1/projects/{id}
+  GET    /api/v1/projects/credentials/all
+  POST   /api/v1/projects/credentials
+  DELETE /api/v1/projects/credentials/{id}
+
+Recommendations (1 endpoint):
+  POST   /api/v1/recommendations/
+
+Research (2+ endpoints):
+  POST   /api/v1/research/start
+  POST   /api/v1/research/stop
+
+Cron (4 endpoints):
+  GET    /api/v1/cron/tasks
+  GET    /api/v1/cron/tasks/{id}
+  POST   /api/v1/cron/tasks/{id}/enable
+  POST   /api/v1/cron/tasks/{id}/disable
+  POST   /api/v1/cron/tasks/{id}/run
+
+Gateway (11 endpoints):
+  POST   /api/v1/gateway/register
+  POST   /api/v1/gateway/login
+  GET    /api/v1/gateway/account
+  GET    /api/v1/gateway/keys
+  POST   /api/v1/gateway/keys
+  GET    /api/v1/gateway/usage
+  GET    /api/v1/features/available
+
+TOTAL: ~130+ endpoints
+
+
+================================================================================
+3. CORE DATA FLOWS
+================================================================================
+
+FLOW 1: Chat Request Processing
+─────────────────────────────────────────────────────────────────────────
+
+ChatRequest → orchestrator.py:process_chat()
+  ├─ Normalize spelling (_normalize_for_matching)
+  ├─ Detect data queries
+  │   ├─ Stock prices? → yfinance.fetch_live_stock_data()
+  │   ├─ News? → brave_search.fetch_live_search_data()
+  │   └─ Other → pass to LLM
+  ├─ Retrieve memories (memory.py:recall_memories) via Chroma
+  ├─ Analyze images (vision_service.py) if included
+  ├─ Route to LLM (llm_router.py:chat_completion)
+  │   ├─ Model selection based on tier (reasoning/fast/auto)
+  │   └─ Auto-route based on complexity
+  ├─ Execute tools if requested (tool_calling.py)
+  ├─ Validate response (fact_checker.py)
+  └─ Generate recommendations (recommendations.py)
+
+Response → ChatResponse (with metadata, confidence, images, warnings)
+
+
+FLOW 2: Agent Execution
+─────────────────────────────────────────────────────────────────────────
+
+AgentTaskRequest → agents/models.py:AgentTask
+  → executor.execute(task)
+    ├─ Check approval requirements
+    ├─ Validate task (agent.validate)
+    ├─ Execute (agent.execute)
+    ├─ Record to history
+    └─ Return AgentResult
+
+Streaming variant emits progress events via SSE:
+  event: progress → agent is processing
+  event: bash → command executed
+  event: chain → agent invoked another agent
+  event: result → final outcome
+
+
+FLOW 3: Voice Session
+─────────────────────────────────────────────────────────────────────────
+
+POST /voice/live/start
+  → VoiceSessionManager.create_session()
+  → Returns session_id + config
+
+POST /voice/live/turn (repeat)
+  ├─ record_user_turn()
+  ├─ build_voice_system_overlay()
+  ├─ get_conversation_context()
+  └─ Return context for /chat/stream with voice overlay
+
+POST /voice/live/interrupt → session.interrupt()
+POST /voice/live/end → mgr.end_session() + stats
+
+
+FLOW 4: Scan & Briefing Generation
+─────────────────────────────────────────────────────────────────────────
+
+Automatic (cron) or Manual:
+  POST /scanner/scan-now
+    → orchestrator.run_full_scan()
+      ├─ Iterate through configured sources
+      │   ├─ NewsAPI
+      │   ├─ Twitter/X API
+      │   ├─ Reddit
+      │   └─ Custom sources
+      ├─ Filter by keywords + relevance threshold
+      └─ Store results
+
+GET /scanner/briefing
+  → orchestrator.get_briefing()
+    ├─ Load recent scan results
+    ├─ Compile into markdown
+    ├─ Use LLM to generate summary + insights
+    └─ Cache for repeated requests
+
+
+FLOW 5: Memory (Vector Embeddings)
+─────────────────────────────────────────────────────────────────────────
+
+store_memory(content, metadata)
+  → Chroma.add()
+    ├─ Generate embedding (OpenAI or Sentence Transformers)
+    └─ Store vector + metadata
+
+recall_memories(query)
+  → Chroma.query()
+    ├─ Generate embedding for query
+    ├─ Semantic similarity search
+    └─ Return top-k results (default k=5)
+
+
+================================================================================
+4. ORCHESTRATOR (THE BRAIN)
+================================================================================
+
+File: /sessions/admiring-funny-gauss/mnt/cipher-app/app/services/orchestrator.py
+
+Purpose: Central hub that coordinates all chat processing
+
+Key Functions:
+
+process_chat(request, db) → ChatResponse
+  ├─ 1. Data Detection
+  │     └─ Patterns: stocks, news, search, time-sensitive info
+  │     └─ If matched: invoke real agents BEFORE LLM
+  │
+  ├─ 2. Spelling Correction (deCIPHER)
+  │     └─ Normalize typos: "analize" → "analyze"
+  │     └─ Ticker shortcuts: "tsla" → "TSLA"
+  │
+  ├─ 3. Memory Integration
+  │     └─ Recall relevant context from Chroma
+  │     └─ Inject into system prompt
+  │
+  ├─ 4. Image Analysis (if images in request)
+  │     └─ Call vision_service.py → Claude Vision API
+  │     └─ Inject descriptions into prompt
+  │
+  ├─ 5. LLM Routing
+  │     └─ Call llm_router.py:chat_completion
+  │     └─ Select model (reasoning/fast/auto)
+  │     └─ Handle context window, tool calling
+  │
+  ├─ 6. Tool Execution
+  │     └─ If LLM requests tools (search, web, etc.)
+  │     └─ Execute via tool_calling.py
+  │     └─ Feed results back to LLM
+  │
+  ├─ 7. Response Validation
+  │     └─ fact_checker.py: Check unverified claims
+  │     └─ Generate confidence_score (0-1)
+  │     └─ Add validation_warnings
+  │
+  ├─ 8. Recommendation Generation
+  │     └─ recommendations.py: Suggest agents
+  │     └─ "Let Crawler scrape that?"
+  │
+  └─ 9. Response Assembly
+        └─ Save to DB (ConversationRecord, MessageRecord)
+        └─ Return ChatResponse with all metadata
+
+Key Patterns Detected:
+
+_STOCK_PATTERN
+  → Matches: "price", "quote", "$TSLA", ticker symbols
+  → Action: Fetch live price via yfinance
+  → Result: Inject real prices into prompt
+
+_NEWS_PATTERN
+  → Matches: "breaking news", "what's happening", "latest"
+  → Action: Brave Search API
+  → Result: Top 5 recent articles
+
+_SEARCH_PATTERN
+  → Matches: "search for", "look up", "how much/many"
+  → Action: Web search or agent invocation
+
+
+================================================================================
+5. AGENT FRAMEWORK (29 AGENTS)
+================================================================================
+
+File: /sessions/admiring-funny-gauss/mnt/cipher-app/app/agents/
+
+All Agents:
+
+Core Execution (5):
+  - ShellAgent (bash commands)
+  - WebAgent (web scraping)
+  - CodeAgent (code generation)
+  - FileAgent (file operations)
+  - DeployAgent (deployment)
+
+Data & Analysis (4):
+  - DataAgent (data processing)
+  - AnalystAgent (analysis)
+  - ResearchAgent (research)
+  - ProfitabilityAnalystAgent (financial)
+
+AI & Generation (3):
+  - ImageAgent (image generation)
+  - VideoAgent (video generation)
+  - SynthesisAgent (synthesis)
+
+Intelligence (4):
+  - BraveSearchAgent (web search)
+  - MonitorAgent (monitoring)
+  - SentinelAgent (security)
+  - MarketPulseAgent (market data)
+
+Infrastructure (3):
+  - ProvisioningAgent (provisioning)
+  - SchedulerAgent (scheduling)
+  - CronAgent (cron management)
+
+Business (5):
+  - OutreachAgent (outreach)
+  - LegalAgent (legal)
+  - DealFlowAgent (deal flow)
+  - NeighborhoodGrowthAgent (growth)
+  - ApexArchitectAgent (architecture)
+
+Real Estate (1):
+  - ScoutAgent (real estate)
+
+Trading (1):
+  - TradingAgent (paper trading)
+
+Communication (1):
+  - CommunicationAgent (email, SMS, Slack)
+
+Meta (1):
+  - SkillCreatorAgent (create new skills)
+
+Calendar (1):
+  - ChronosAgent (calendar)
+
+Archive (1):
+  - ArchivistAgent (archive)
+
+Execution:
+
+registry.register(agent) → Add to registry
+executor.execute(task) → Run agent
+  ├─ Validate task
+  ├─ Check approvals
+  ├─ Run agent code
+  └─ Record result
+
+Approval Workflow:
+
+If agent.requires_approval_for(instruction):
+  → Add to pending_approvals queue
+  → Return with requires_approval: true
+  → Wait for POST /agents/approve/{task_id}
+
+
+================================================================================
+6. DATABASE SCHEMA
+================================================================================
+
+File: /sessions/admiring-funny-gauss/mnt/cipher-app/app/db/models.py
+
+Tables:
+
+ConversationRecord
+  id, user_id, title, created_at, updated_at
+
+MessageRecord
+  id, conversation_id, role, content, created_at
+
+UsageLog
+  id, model, provider, total_tokens, cost_usd, latency_ms, created_at
+
+SystemPrompt
+  id, name, content, is_default, created_at
+
+ElysianAccount (gateway)
+  id, email, hashed_password, tier, monthly_token_limit, etc.
+
+ElysianAPIKey (gateway)
+  id, account_id, key_hash, key_prefix, can_chat, can_scan, etc.
+
+ElysianUsage (gateway)
+  id, account_id, date, tokens, requests, cost_usd
+
+ProjectRecord
+  id, name, description, icon, color, platform, repo_url, deploy_url
+
+ProjectServiceRecord
+  id, project_id, service_type, credential_id, config
+
+ServiceCredentialRecord
+  id, name, service_type, project_id, token_value (encrypted), etc.
+
+
+================================================================================
+7. STREAMING & REAL-TIME
+================================================================================
+
+Server-Sent Events (SSE) used for:
+
+1. /api/v1/chat/stream
+   Events: token, image, metadata
+   Pattern: Chunks text in 3-char pieces
+   Keepalive: Every 5 seconds if processing
+
+2. /api/v1/agents/execute/stream
+   Events: progress, bash, chain, result
+   Pattern: Real-time task updates
+   Keepalive: Heartbeat if idle
+
+3. /api/v1/voice/synthesize/stream
+   Pattern: Chunked audio transfer
+
+Client Implementation (JavaScript):
+
+const eventSource = new EventSource(url);
+eventSource.addEventListener('token', e => {
+  const data = JSON.parse(e.data);
+  // Append to UI
+});
+eventSource.addEventListener('metadata', e => {
+  // Final response
+  eventSource.close();
+});
+
+
+================================================================================
+8. AUTHENTICATION & AUTHORIZATION
+================================================================================
+
+Free Mode:
+  No API key required
+  Uses environment variables (user's own LLM keys)
+  Soft usage tracking only
+
+Premium Mode (Elysian Gateway):
+  API key authentication: X-Elysian-Key header
+  Routes protected by @Depends(validate_api_key)
+  JWT for dashboard login
+  Per-key feature permissions (can_chat, can_scan, etc.)
+
+Tiers:
+
+Free ($0)
+  ✓ Chat, streaming, basic voice
+  ✓ 15 min voice/month
+  ✓ Soft limits on requests
+
+Pro ($29)
+  ✓ 4 situational voices
+  ✓ Emotion detection
+  ✓ Cascade routing
+  ✓ 300 min voice/month
+
+Business ($79)
+  ✓ 7 voices + education voices
+  ✓ 5 hours voice/month
+  ✓ Weekly briefings
+
+Enterprise ($199)
+  ✓ Voice cloning
+  ✓ Custom voice design
+  ✓ White label
+
+
+================================================================================
+9. EXTERNAL INTEGRATIONS
+================================================================================
+
+LLM Providers:
+  - Anthropic (Claude Opus 4.6, Sonnet, Haiku)
+  - OpenAI (GPT-4, GPT-4 Turbo)
+  - Groq (Llama, Mixtral)
+  - DeepSeek
+  - xAI (Grok) [optional]
+  - Ollama (local)
+
+Voice:
+  - ElevenLabs (TTS, voice cloning, voice library)
+
+Media Generation:
+  - Stability AI (image)
+  - Replicate (video, image)
+  - FAL AI (video)
+
+Search:
+  - Brave Search API (web search, critical for anti-hallucination)
+
+Financial Data:
+  - yfinance (stock prices, real-time)
+
+News:
+  - NewsAPI (news articles)
+
+Social:
+  - Twitter/X API
+
+Real Estate:
+  - ATTOM API
+
+Communication:
+  - Twilio (SMS, voice calls)
+  - SMTP/IMAP (email)
+  - Slack API
+  - FCM (Firebase Cloud Messaging for push)
+
+Vision:
+  - Claude Vision (image analysis)
+
+Embeddings:
+  - OpenAI (embedding model)
+  - or Sentence Transformers (local)
+
+Vector DB:
+  - Chroma (embedded vector store for memory)
+
+Monitoring:
+  - Structured logging
+  - Usage tracking
+
+
+================================================================================
+10. CONFIGURATION & STARTUP
+================================================================================
+
+Entry Point: main.py
+
+Lifespan Hook (@asynccontextmanager):
+  ├─ Load .env via app/core/config.py
+  ├─ Export all API keys to os.environ
+  ├─ Initialize database (SQLite or PostgreSQL)
+  ├─ Log provider availability
+  ├─ Start scanner (if enabled)
+  └─ Register cleanup on shutdown
+
+CORS:
+  allow_origins: ["*"]
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+Middleware:
+  - CORSMiddleware
+  - Exception handlers
+  - Logging
+
+Router Registration Order:
+  1. agents.router
+  2. chat.router (with /api/v1 prefix)
+  3. memory.router
+  4. models.router
+  5. system.router
+  6. scanner.router
+  7. voice.router
+  8. notifications.router
+  9. recommendations.router
+  10. media.router
+  11. research.router
+  12. cron.router
+  13. projects.router
+  14. gateway_router
+  15. availability_router
+
+
+================================================================================
+11. FRONTEND INTEGRATION CHECKLIST
+================================================================================
+
+Must Implement:
+  ☐ POST /api/v1/chat for basic messaging
+  ☐ POST /api/v1/chat/stream for real-time responses
+  ☐ GET /api/v1/chat/conversations for history
+  ☐ GET /api/v1/chat/conversations/{id} for loading past chat
+  ☐ Handle SSE events in UI (token appending, metadata display)
+  ☐ Error handling for HTTP errors
+
+Should Implement:
+  ☐ Image upload via POST /api/v1/chat/upload-image
+  ☐ Voice synthesis via POST /api/v1/voice/synthesize
+  ☐ Agent recommendations via POST /api/v1/recommendations/
+  ☐ Agent execution via POST /api/v1/agents/execute
+  ☐ Get feature availability via GET /api/v1/features/available
+
+Nice to Have:
+  ☐ Live voice sessions (POST /api/v1/voice/live/*)
+  ☐ Image generation (POST /api/v1/media/generate-image)
+  ☐ Scanner briefings (GET /scanner/briefing)
+  ☐ Emotion detection (POST /api/v1/voice/analyze-emotion)
+  ☐ Spawn agents (POST /api/v1/agents/spawn-batch)
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Cipher is a production-ready, multi-agent AI system with:
+
+✓ 130+ REST endpoints
+✓ Real-time SSE streaming
+✓ 29 specialized agents
+✓ Vector memory (long-term learning)
+✓ Premium tier system (Elysian Gateway)
+✓ Voice synthesis + emotion detection
+✓ Real-time data integration (stocks, news)
+✓ Approval workflows for critical operations
+✓ Comprehensive error handling
+✓ Structured logging
+✓ Multi-LLM provider support
+
+The system is designed to be:
+- Scalable (async/await, concurrent task execution)
+- Secure (API key validation, approval workflows)
+- Reliable (error handling, fallbacks, timeouts)
+- Extensible (agent framework, tool calling, plugins)
+- Observable (usage tracking, logging, metrics)
+
+See COMPLETE_API_REFERENCE.md for full endpoint documentation.
+See API_QUICK_START.md for developer quick reference.
+
+================================================================================

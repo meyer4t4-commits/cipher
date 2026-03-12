@@ -597,15 +597,58 @@ async def process_chat(
                 tool_result = await execute_tool(tool_name, tool_args)
 
             # VALIDATION GATE: Check if the tool result indicates an error.
-            # If it does, log it clearly so the LLM can decide to retry or pivot.
+            # If it does, log it and trigger self-healing before the LLM sees it.
             is_error = False
             try:
                 parsed = json.loads(tool_result) if tool_result else {}
                 if isinstance(parsed, dict) and parsed.get("error"):
                     is_error = True
+                    error_msg = parsed['error'][:500]
                     logger.warning(
-                        f"Tool {tool_name} returned error: {parsed['error'][:200]}"
+                        f"Tool {tool_name} returned error: {error_msg[:200]}"
                     )
+
+                    # SELF-HEALING GATE: Try to auto-fix before giving up
+                    try:
+                        from app.services.self_healing import get_healing_loop
+                        heal = get_healing_loop()
+                        heal_result = await heal.handle_tool_failure(
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                            error=error_msg,
+                            stack_trace=parsed.get("traceback", ""),
+                        )
+                        if heal_result.get("action") == "fixed":
+                            # Re-execute the tool after fix
+                            logger.info(f"[SELF-HEAL] Retrying {tool_name} after auto-fix")
+                            tool_result = await execute_tool(tool_name, tool_args)
+                            # Re-check if the retry succeeded
+                            retry_parsed = json.loads(tool_result) if tool_result else {}
+                            if isinstance(retry_parsed, dict) and not retry_parsed.get("error"):
+                                is_error = False
+                                logger.info(f"[SELF-HEAL] {tool_name} succeeded after auto-fix")
+                            else:
+                                # Inject healing context so LLM knows what happened
+                                tool_result = json.dumps({
+                                    "error": error_msg,
+                                    "self_healing": "Auto-fix attempted but tool still fails",
+                                    "diagnosis": heal_result.get("diagnosis", {}),
+                                })
+                        elif heal_result.get("action") == "escalate":
+                            # Add diagnosis context to the error for the LLM
+                            diagnosis = heal_result.get("diagnosis", {})
+                            tool_result = json.dumps({
+                                "error": error_msg,
+                                "self_healing_diagnosis": {
+                                    "likely_causes": diagnosis.get("likely_causes", []),
+                                    "suggested_actions": diagnosis.get("suggested_actions", []),
+                                    "fixable_by_code": diagnosis.get("fixable", False),
+                                },
+                                "instruction": "Use diagnose_self or self_update to investigate and fix this.",
+                            })
+                    except Exception as heal_err:
+                        logger.debug(f"Self-healing gate error (non-fatal): {heal_err}")
+
             except (json.JSONDecodeError, TypeError):
                 pass
 

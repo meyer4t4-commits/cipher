@@ -311,6 +311,87 @@ CIPHER_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "diagnose_self",
+            "description": (
+                "Run a comprehensive self-diagnostic on all Cipher subsystems. "
+                "Checks: API keys, database, memory, LLM routing, agent registry, "
+                "cron tasks, tool calling, and external service connectivity. "
+                "Use this when: something fails, you get errors, a tool doesn't work, "
+                "or you need to understand why a capability is broken. "
+                "Returns pass/fail/warning for each subsystem with fix instructions. "
+                "Can also attempt automatic fixes for common issues."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "auto_fix": {
+                        "type": "boolean",
+                        "description": "If true, attempt automatic fixes for any issues found (default: false)",
+                    },
+                    "specific_check": {
+                        "type": "string",
+                        "description": "Run only a specific check: 'api_keys', 'database', 'memory', 'llm', 'agents', 'cron', 'tools', 'external'",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_error_history",
+            "description": (
+                "Get Cipher's error tracking history — see all recent errors, recurring patterns, "
+                "and fix success rates. Use this to understand what's been breaking, what fixes "
+                "have been tried, and what still needs attention. Essential for self-improvement: "
+                "identify patterns, learn from failures, and prioritize what to fix next."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_details": {
+                        "type": "boolean",
+                        "description": "If true, include full error details (default: false, returns summary only)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "test_and_verify",
+            "description": (
+                "After making a code fix with self_update, run this to verify the fix works. "
+                "Executes a test command or re-runs a failed operation to confirm the repair. "
+                "If the test fails, automatically rolls back the change. "
+                "ALWAYS use this after patching your own code — never assume a fix works without testing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "test_command": {
+                        "type": "string",
+                        "description": "Shell command to run as a test (e.g., 'python -c \"from app.services.xyz import func\"')",
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "The file that was modified (for rollback if test fails)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What this test verifies",
+                    },
+                },
+                "required": ["test_command", "file_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chain_agents",
             "description": (
                 "Execute multiple agents in sequence, where each agent's output feeds into "
@@ -490,6 +571,12 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
             return await _exec_memory_recall(arguments)
         elif tool_name == "generate_image":
             return await _exec_generate_image(arguments)
+        elif tool_name == "diagnose_self":
+            return await _exec_diagnose_self(arguments)
+        elif tool_name == "get_error_history":
+            return await _exec_get_error_history(arguments)
+        elif tool_name == "test_and_verify":
+            return await _exec_test_and_verify(arguments)
         elif tool_name == "delegate_to_agent":
             return await _exec_delegate_to_agent(arguments)
         elif tool_name == "chain_agents":
@@ -891,6 +978,150 @@ async def _exec_generate_image(args: dict) -> str:
     except Exception as e:
         logger.error(f"generate_image tool failed: {e}")
         return json.dumps({"error": f"Image generation error: {str(e)}"})
+
+
+async def _exec_diagnose_self(args: dict) -> str:
+    """Run self-diagnostic and optionally attempt fixes. Includes error history."""
+    try:
+        from app.services.self_diagnostic import run_full_diagnostic, attempt_self_fix
+
+        auto_fix = args.get("auto_fix", False)
+
+        # Run full diagnostic
+        report = await run_full_diagnostic()
+
+        # Include error tracking history
+        try:
+            from app.services.self_healing import get_healing_loop
+            heal = get_healing_loop()
+            report["error_tracking"] = heal.get_health_report()
+        except Exception:
+            report["error_tracking"] = {"status": "not_initialized"}
+
+        # If auto_fix is enabled and there are errors, attempt fixes
+        if auto_fix and report["errors"]:
+            fix_results = []
+            for error in report["errors"]:
+                fix = await attempt_self_fix(error)
+                fix_results.append(fix)
+            report["auto_fix_results"] = fix_results
+
+            # Re-run diagnostic after fixes
+            report["post_fix_diagnostic"] = await run_full_diagnostic()
+
+        return json.dumps(report, default=str)
+
+    except Exception as e:
+        logger.error(f"Self-diagnostic failed: {e}")
+        return json.dumps({
+            "error": f"Diagnostic system itself failed: {str(e)[:300]}",
+            "suggestion": "Check app/services/self_diagnostic.py for import errors",
+        })
+
+
+async def _exec_get_error_history(args: dict) -> str:
+    """Get error tracking history and patterns."""
+    try:
+        from app.services.self_healing import get_error_tracker
+
+        tracker = get_error_tracker()
+        include_details = args.get("include_details", False)
+
+        summary = tracker.get_error_summary()
+
+        if not include_details:
+            # Strip full error details, keep just the summary
+            summary.pop("recent_errors", None)
+
+        return json.dumps(summary, default=str)
+
+    except Exception as e:
+        logger.error(f"Error history retrieval failed: {e}")
+        return json.dumps({"error": str(e)})
+
+
+async def _exec_test_and_verify(args: dict) -> str:
+    """Run a test command and rollback the file if the test fails."""
+    test_command = args.get("test_command", "")
+    file_path_str = args.get("file_path", "")
+    description = args.get("description", "Verification test")
+
+    if not test_command:
+        return json.dumps({"error": "No test_command specified"})
+    if not file_path_str:
+        return json.dumps({"error": "No file_path specified (needed for rollback)"})
+
+    project_root = Path(_get_project_root())
+    file_path = project_root / file_path_str
+    backup_path = file_path.with_suffix(file_path.suffix + ".bak")
+
+    try:
+        # Run the test command
+        import subprocess
+        proc = subprocess.run(
+            test_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(project_root),
+        )
+
+        if proc.returncode == 0:
+            # Test passed — fix is verified
+            logger.info(f"[VERIFY] Test passed for {file_path_str}: {description}")
+
+            # Log the successful fix
+            try:
+                from app.services.self_healing import get_healing_loop
+                heal = get_healing_loop()
+                heal.tracker.record_fix(
+                    fingerprint=f"manual_{file_path_str}",
+                    fix_data={"file_path": file_path_str, "description": description},
+                    success=True,
+                )
+            except Exception:
+                pass
+
+            return json.dumps({
+                "verified": True,
+                "test_command": test_command,
+                "file": file_path_str,
+                "description": description,
+                "stdout": proc.stdout[:500] if proc.stdout else "",
+                "message": "Fix verified successfully. The change is good.",
+            })
+        else:
+            # Test failed — ROLLBACK
+            logger.warning(f"[VERIFY] Test FAILED for {file_path_str}, rolling back")
+
+            rollback_msg = ""
+            if backup_path.exists():
+                file_path.write_text(backup_path.read_text(encoding="utf-8"), encoding="utf-8")
+                rollback_msg = f"Rolled back {file_path_str} to backup version."
+                logger.info(f"[VERIFY] Rolled back {file_path_str}")
+            else:
+                rollback_msg = f"No backup found at {backup_path} — manual fix needed."
+
+            return json.dumps({
+                "verified": False,
+                "test_command": test_command,
+                "file": file_path_str,
+                "description": description,
+                "stderr": proc.stderr[:500] if proc.stderr else "",
+                "stdout": proc.stdout[:500] if proc.stdout else "",
+                "rollback": rollback_msg,
+                "message": "Test failed. Change has been rolled back. Review the error and try a different fix.",
+            })
+
+    except subprocess.TimeoutExpired:
+        return json.dumps({
+            "verified": False,
+            "error": "Test command timed out after 30 seconds",
+            "test_command": test_command,
+        })
+    except Exception as e:
+        return json.dumps({"error": f"Verification failed: {str(e)[:300]}"})
 
 
 async def _exec_delegate_to_agent(args: dict) -> str:

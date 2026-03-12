@@ -1,0 +1,328 @@
+================================================================================
+CIPHER — COMPLETE ENDPOINT REFERENCE
+================================================================================
+
+ROOT ENDPOINTS
+================================================================================
+GET  /                         → {"name": "Cipher", ...}
+GET  /ping                     → {"pong": true}
+GET  /docs                     → Swagger UI
+GET  /redoc                    → ReDoc documentation
+GET  /dashboard                → Dashboard HTML
+
+
+CHAT ENDPOINTS (api/chat.py)
+================================================================================
+POST   /api/v1/chat                              Send message, get response
+POST   /api/v1/chat/stream                       Stream response (SSE)
+POST   /api/v1/chat/upload-image                 Upload image for chat
+GET    /api/v1/chat/conversations                List all conversations
+GET    /api/v1/chat/conversations/{conversation_id}  Get conversation
+DELETE /api/v1/chat/conversations/{conversation_id}  Delete conversation
+
+
+AGENT ENDPOINTS (api/agents.py)
+================================================================================
+POST   /api/v1/agents/execute                    Execute single agent task
+POST   /api/v1/agents/execute/stream             Execute with real-time progress (SSE)
+POST   /api/v1/agents/batch                      Execute multiple tasks (wait for all)
+POST   /api/v1/agents/spawn-batch                Spawn agents concurrently
+GET    /api/v1/agents/spawn-session/{session_id}  Poll spawn session progress
+GET    /api/v1/agents/agents                     List all agents
+GET    /api/v1/agents/capabilities               Get all capabilities
+GET    /api/v1/agents/capabilities/{category}    Get capabilities by category
+GET    /api/v1/agents/status/{task_id}           Get task status
+GET    /api/v1/agents/status                     Get executor status
+GET    /api/v1/agents/history                    Get execution history
+GET    /api/v1/agents/approvals                  Get pending approvals
+POST   /api/v1/agents/approve/{task_id}          Approve pending task
+POST   /api/v1/agents/reject/{task_id}           Reject pending task
+POST   /api/v1/agents/cancel/{task_id}           Cancel running task
+GET    /api/v1/agents/interactions/pending       Get pending interactions
+POST   /api/v1/agents/interactions/{id}/answer   Answer agent's question
+POST   /api/v1/agents/interactions/{id}/dismiss  Dismiss agent's question
+DELETE /api/v1/agents/history                    Clear execution history
+
+
+VOICE ENDPOINTS (api/voice.py)
+================================================================================
+POST   /api/v1/voice/synthesize                  TTS (returns audio/mpeg)
+POST   /api/v1/voice/synthesize/stream           Stream TTS (chunked)
+POST   /api/v1/voice/clone                       Clone voice (consent required)
+GET    /api/v1/voice/voices                      List available voices
+GET    /api/v1/voice/voices/{voice_id}           Get voice details
+DELETE /api/v1/voice/voices/{voice_id}           Delete cloned voice
+GET    /api/v1/voice/usage                       Get ElevenLabs usage stats
+POST   /api/v1/voice/analyze-emotion             Analyze audio emotion
+GET    /api/v1/voice/emotion-history/{user_id}   Get emotion history
+POST   /api/v1/voice/live/start                  Start live voice session
+POST   /api/v1/voice/live/turn                   Send turn in live session
+POST   /api/v1/voice/live/interrupt              Interrupt live session
+POST   /api/v1/voice/live/end                    End live session
+GET    /api/v1/voice/live/sessions               List active sessions
+
+
+MEDIA ENDPOINTS (api/media.py)
+================================================================================
+POST   /api/v1/media/generate-image              Generate image from prompt
+POST   /api/v1/media/generate-video              Generate video from prompt
+POST   /api/v1/media/chain-video                 Chain videos (multiple scenes)
+GET    /api/v1/media/file/{filename}             Serve generated file
+GET    /api/v1/media/history                     Get recent media history
+
+
+SCANNER ENDPOINTS (api/scanner.py)
+================================================================================
+GET    /scanner/status                           Get scanner status
+GET    /scanner/briefing                         Get latest briefing
+GET    /scanner/briefing/{date}                  Get briefing by date (YYYY-MM-DD)
+POST   /scanner/scan-now                         Trigger full scan
+POST   /scanner/briefing-now                     Generate briefing now
+GET    /scanner/config                           Get scanner config
+PUT    /scanner/config                           Update scanner config
+POST   /scanner/keywords                         Add keyword to track
+DELETE /scanner/keywords                         Remove keyword from tracking
+GET    /scanner/health                           Check scanner health
+
+
+MEMORY ENDPOINTS (api/memory.py)
+================================================================================
+POST   /api/v1/memory/store                      Store information in memory
+POST   /api/v1/memory/recall                     Search memory
+GET    /api/v1/memory/stats                      Get memory statistics
+DELETE /api/v1/memory/{memory_id}                Delete specific memory
+
+
+SYSTEM ENDPOINTS (api/system.py)
+================================================================================
+GET    /api/v1/system/health                     Health check
+GET    /api/v1/system/prompts                    List system prompts
+POST   /api/v1/system/prompts                    Create/update system prompt
+DELETE /api/v1/system/prompts/{name}             Delete system prompt
+
+
+MODEL ENDPOINTS (api/models.py)
+================================================================================
+GET    /api/v1/models/                           List models and tiers
+GET    /api/v1/models/health                     Test model availability
+GET    /api/v1/models/usage                      Get usage statistics
+
+
+NOTIFICATION ENDPOINTS (api/notifications.py)
+================================================================================
+POST   /api/v1/notifications/register-device     Register device for push
+DELETE /api/v1/notifications/unregister-device   Unregister device
+GET    /api/v1/notifications/devices             List registered devices
+POST   /api/v1/notifications/test                Send test notification
+GET    /api/v1/notifications/preferences         Get preferences
+PUT    /api/v1/notifications/preferences         Update preferences
+
+
+PROJECT ENDPOINTS (api/projects.py)
+================================================================================
+GET    /api/v1/projects/                         List projects
+POST   /api/v1/projects/                         Create project
+GET    /api/v1/projects/{project_id}             Get project
+PATCH  /api/v1/projects/{project_id}             Update project
+DELETE /api/v1/projects/{project_id}             Delete project
+GET    /api/v1/projects/credentials/all          List credentials
+POST   /api/v1/projects/credentials              Create credential
+DELETE /api/v1/projects/credentials/{id}         Delete credential
+
+
+RECOMMENDATION ENDPOINTS (api/recommendations.py)
+================================================================================
+POST   /api/v1/recommendations/                  Get agent recommendations
+
+
+RESEARCH ENDPOINTS (api/research.py)
+================================================================================
+POST   /api/v1/research/start                    Start research loop
+POST   /api/v1/research/stop                     Stop research loop
+GET    /api/v1/research/experiments              Get experiments
+
+
+CRON ENDPOINTS (api/cron.py)
+================================================================================
+GET    /api/v1/cron/tasks                        List cron tasks
+GET    /api/v1/cron/tasks/{task_id}              Get task details
+POST   /api/v1/cron/tasks/{task_id}/enable       Enable task
+POST   /api/v1/cron/tasks/{task_id}/disable      Disable task
+POST   /api/v1/cron/tasks/{task_id}/run          Run task immediately
+
+
+GATEWAY ENDPOINTS (gateway/api.py)
+================================================================================
+POST   /api/v1/gateway/register                  Register account
+POST   /api/v1/gateway/login                     Login
+GET    /api/v1/gateway/account                   Get account details
+GET    /api/v1/gateway/keys                      List API keys
+POST   /api/v1/gateway/keys                      Create API key
+GET    /api/v1/gateway/usage                     Get usage stats
+
+
+FEATURES ENDPOINT (gateway/premium_routes.py)
+================================================================================
+GET    /api/v1/features/available                Get feature availability
+
+
+================================================================================
+ENDPOINT STATISTICS
+================================================================================
+
+Total Endpoints: ~140+
+
+By Category:
+  Chat:            6
+  Agents:         17
+  Voice:          14
+  Media:           5
+  Scanner:        10
+  Memory:          4
+  System:          4
+  Models:          3
+  Notifications:   6
+  Projects:        8
+  Recommendations: 1
+  Research:        3+
+  Cron:            5
+  Gateway:         7
+  Features:        1
+
+By Method:
+  GET:   ~60
+  POST:  ~60
+  PUT:   ~3
+  PATCH: ~2
+  DELETE: ~15
+
+By Authentication:
+  Public (free):     ~120
+  API Key Required:  ~7 (gateway, premium)
+  JWT Token:         ~4 (dashboard)
+
+
+================================================================================
+STREAMING ENDPOINTS (SSE)
+================================================================================
+
+POST /api/v1/chat/stream
+  Events: token, image, metadata
+
+POST /api/v1/agents/execute/stream
+  Events: progress, bash, chain, result
+
+POST /api/v1/voice/synthesize/stream
+  Response: audio/mpeg (chunked)
+
+
+================================================================================
+QUERY PARAMETER REFERENCE
+================================================================================
+
+Pagination:
+  limit  (int) - Max records to return
+  offset (int) - Records to skip
+
+Filtering:
+  category (string) - Filter by category
+  days     (int) - Days of historical data
+
+Voice/Emotion:
+  user_id (string) - User identifier
+  voice_id (string) - Voice identifier
+
+Media:
+  hours (int) - How far back to look
+
+Models:
+  model_id (string) - Specific model
+  provider (string) - Provider name
+
+Features:
+  X-Elysian-Key (header) - API key for premium
+
+
+================================================================================
+RESPONSE STATUS CODES
+================================================================================
+
+200 OK                - Success
+201 Created           - Resource created
+400 Bad Request       - Invalid input
+401 Unauthorized      - Auth required/failed
+403 Forbidden         - Access denied
+404 Not Found         - Resource doesn't exist
+409 Conflict          - State conflict
+500 Internal Error    - Server error
+503 Service Unavailable - Feature disabled
+
+
+================================================================================
+COMMON HEADERS
+================================================================================
+
+Request:
+  Content-Type: application/json
+  X-Elysian-Key: cipher_key_abc123... (optional, for premium)
+  Authorization: Bearer jwt_token... (for gateway)
+
+Response:
+  Content-Type: application/json
+  Cache-Control: (varies)
+  X-Accel-Buffering: no (for SSE)
+
+
+================================================================================
+QUICK TEST COMMANDS
+================================================================================
+
+# Test health
+curl http://localhost:8000/ping
+
+# Test chat
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+
+# Test stream
+curl -X POST http://localhost:8000/api/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+
+# List agents
+curl http://localhost:8000/api/v1/agents/agents
+
+# Get models
+curl http://localhost:8000/api/v1/models/
+
+# Check health
+curl http://localhost:8000/api/v1/system/health
+
+# Get features (with key)
+curl http://localhost:8000/api/v1/features/available \
+  -H "X-Elysian-Key: cipher_key_..."
+
+
+================================================================================
+NESTED ROUTES (by prefix)
+================================================================================
+
+/api/v1/chat/*         → 6 endpoints
+/api/v1/agents/*       → 17 endpoints
+/api/v1/voice/*        → 14 endpoints
+/api/v1/media/*        → 5 endpoints
+/scanner/*             → 10 endpoints (no /api/v1 prefix)
+/api/v1/memory/*       → 4 endpoints
+/api/v1/system/*       → 4 endpoints
+/api/v1/models/*       → 3 endpoints
+/api/v1/notifications/*    → 6 endpoints
+/api/v1/projects/*     → 8 endpoints
+/api/v1/recommendations/*  → 1 endpoint
+/api/v1/research/*     → 3+ endpoints
+/api/v1/cron/*         → 5 endpoints
+/api/v1/gateway/*      → 7 endpoints
+/api/v1/features/*     → 1 endpoint
+
+
+================================================================================
