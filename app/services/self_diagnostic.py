@@ -216,7 +216,8 @@ async def _check_agent_registry() -> dict:
                 "detail": "No agents registered. Agents lazy-load on first use.",
             }
 
-        agent_names = [a.name for a in agents] if agents else []
+        # registry.list_agents() returns strings, not objects
+        agent_names = list(agents) if agents else []
         return {
             "name": "Agent Registry",
             "status": "pass",
