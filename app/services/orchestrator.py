@@ -557,6 +557,22 @@ async def process_chat(
         forced_tool_choice = {"type": "function", "function": {"name": "search_web"}}
         logger.info("[TOOL ROUTING] Search request detected — forcing search_web tool call")
 
+    # Force delegate_to_agent for tasks that need specialized agents
+    DELEGATE_KEYWORDS = {
+        "communication_agent": ["send an email", "send email", "send a text", "send sms", "send a message to",
+                                "text message", "send slack", "email to", "compose email", "write an email"],
+        "video_agent": ["generate a video", "create a video", "make a video", "video of"],
+        "research_agent": ["deep research", "research report", "investigate", "thorough analysis"],
+        "apex_architect_agent": ["competitor analysis", "analyze competitor", "market analysis",
+                                  "product listing", "social media strategy", "ad creative"],
+    }
+    if not forced_tool_choice:
+        for agent_name, keywords in DELEGATE_KEYWORDS.items():
+            if any(kw in user_msg_lower for kw in keywords):
+                forced_tool_choice = {"type": "function", "function": {"name": "delegate_to_agent"}}
+                logger.info(f"[TOOL ROUTING] Agent delegation detected — forcing delegate_to_agent → {agent_name}")
+                break
+
     for round_num in range(max_tool_rounds):
         # Only force tool_choice on the first round
         current_tool_choice = forced_tool_choice if round_num == 0 else None
