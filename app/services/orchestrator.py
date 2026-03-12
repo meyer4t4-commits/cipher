@@ -564,7 +564,22 @@ async def process_chat(
         "video_agent": ["generate a video", "create a video", "make a video", "video of"],
         "research_agent": ["deep research", "research report", "investigate", "thorough analysis"],
         "apex_architect_agent": ["competitor analysis", "analyze competitor", "market analysis",
-                                  "product listing", "social media strategy", "ad creative"],
+                                  "product listing", "social media strategy", "ad creative",
+                                  "shopify store", "build a store", "fix my store", "optimize my store",
+                                  "e-commerce store", "landing page"],
+        "provisioning_agent": ["llc formation", "form an llc", "create an llc", "file llc",
+                               "articles of organization", "operating agreement",
+                               "patent application", "provisional patent", "draft a patent",
+                               "patent draft", "file a patent",
+                               "generate a proposal", "write a proposal", "create a sow",
+                               "statement of work", "business contract", "pitch deck",
+                               "onboard client", "provision client"],
+        "legal_agent": ["trademark search", "trademark", "court case", "legal research",
+                        "nda", "non-disclosure", "terms of service", "privacy policy"],
+        "monitor_agent": ["monitor my site", "health check", "check uptime", "system metrics",
+                          "cpu usage", "memory usage", "check if site is up"],
+        "scheduler_agent": ["schedule a task", "set up a cron", "recurring task", "schedule daily",
+                            "schedule weekly", "automate this"],
     }
     if not forced_tool_choice:
         for agent_name, keywords in DELEGATE_KEYWORDS.items():
