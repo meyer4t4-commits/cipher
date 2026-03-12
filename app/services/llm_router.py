@@ -630,6 +630,7 @@ async def chat_completion_with_tools(
     system_prompt=None,
     tools=None,
     agent_name: Optional[str] = None,
+    tool_choice=None,
 ):
     """
     Chat completion with tool/function calling support.
@@ -658,7 +659,7 @@ async def chat_completion_with_tools(
     }
     if tools:
         kwargs["tools"] = tools
-        kwargs["tool_choice"] = "auto"
+        kwargs["tool_choice"] = tool_choice or "auto"
 
     # Try primary model, failover on error
     failover = FAILOVER_CHAINS.get(model_tier, [model_id])

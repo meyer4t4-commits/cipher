@@ -539,14 +539,36 @@ async def process_chat(
     model_used = ""
     tool_execution_log = []  # Track what tools were called
 
+    # ── FORCED TOOL ROUTING ──────────────────────────────────────────
+    # Detect specific request types and force the LLM to call the right tool
+    # instead of hallucinating a text response.
+    user_msg_lower = request.message.lower() if request.message else ""
+    forced_tool_choice = None
+
+    IMAGE_KEYWORDS = ["generate an image", "create an image", "draw ", "make an image", "generate image",
+                      "create image", "make a picture", "generate a picture", "design a logo",
+                      "create a logo", "make a logo", "illustration of", "artwork of", "picture of"]
+    if any(kw in user_msg_lower for kw in IMAGE_KEYWORDS):
+        forced_tool_choice = {"type": "function", "function": {"name": "generate_image"}}
+        logger.info("[TOOL ROUTING] Image request detected — forcing generate_image tool call")
+
+    SEARCH_KEYWORDS = ["search for", "search the web", "look up", "find information about", "google"]
+    if any(kw in user_msg_lower for kw in SEARCH_KEYWORDS):
+        forced_tool_choice = {"type": "function", "function": {"name": "search_web"}}
+        logger.info("[TOOL ROUTING] Search request detected — forcing search_web tool call")
+
     for round_num in range(max_tool_rounds):
+        # Only force tool_choice on the first round
+        current_tool_choice = forced_tool_choice if round_num == 0 else None
+
         result = await chat_completion_with_tools(
             messages=messages,
             model_tier=model_tier,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
-            system_prompt=system_prompt if round_num == 0 else None,  # System prompt only on first call
+            system_prompt=system_prompt if round_num == 0 else None,
             tools=CIPHER_TOOLS,
+            tool_choice=current_tool_choice,
         )
 
         total_input_tokens += result.get("input_tokens", 0)
@@ -652,10 +674,13 @@ async def process_chat(
             except (json.JSONDecodeError, TypeError):
                 pass
 
+            # For image tools, keep full result so we can extract URLs later
+            preview_limit = 5000 if tool_name in ("generate_image", "delegate_to_agent") else 200
             tool_execution_log.append({
                 "tool": tool_name,
                 "args": tool_args,
-                "result_preview": tool_result[:200] if tool_result else "",
+                "result_preview": tool_result[:preview_limit] if tool_result else "",
+                "full_result": tool_result if tool_name == "generate_image" else None,
                 "round": round_num + 1,
                 "had_error": is_error,
                 "risk_level": risk.value,
@@ -836,16 +861,19 @@ async def process_chat(
         # Direct generate_image tool — parse the structured JSON result
         if tool == "generate_image" and not log_entry.get("had_error"):
             try:
-                parsed_result = json.loads(result_preview) if len(result_preview) < 200 else {}
-                # The full result is in the tool messages — but the preview has URLs
+                # Use full_result if available, fall back to result_preview
+                raw = log_entry.get("full_result") or result_preview
+                parsed_result = json.loads(raw) if raw else {}
                 # Extract from image_urls array or saved_locally paths
                 for url in parsed_result.get("image_urls", []):
                     if url:
                         response_images.append(ImageAttachment(url=url))
+                        logger.info(f"Extracted image URL from generate_image: {url[:80]}...")
                 for path in parsed_result.get("saved_locally", []):
                     if path:
                         response_images.append(ImageAttachment(url=path))
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse generate_image result: {e}")
                 pass
 
         # Also check delegate_to_agent for image results

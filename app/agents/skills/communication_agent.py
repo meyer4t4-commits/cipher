@@ -237,13 +237,18 @@ class CommunicationAgent(BaseAgent):
             )
 
     async def _send_email(self, task: AgentTask) -> AgentResult:
-        """Send email — real SMTP. Requires SMTP config in settings or params."""
+        """Send email — tries Resend API first, falls back to SMTP."""
         to = task.params.get("to")
         subject = task.params.get("subject")
         body = task.params.get("body")
         cc = task.params.get("cc", [])
 
-        # Get SMTP config from params or settings
+        # Try Resend API first (easier setup, better deliverability)
+        resend_key = getattr(settings, "resend_api_key", "")
+        if resend_key:
+            return await self._send_email_resend(task, to, subject, body, cc, resend_key)
+
+        # Fall back to SMTP
         smtp_host = task.params.get("smtp_host", getattr(settings, "smtp_host", ""))
         smtp_port = task.params.get("smtp_port", getattr(settings, "smtp_port", 587))
         smtp_user = task.params.get("smtp_user", getattr(settings, "smtp_user", ""))
@@ -256,8 +261,8 @@ class CommunicationAgent(BaseAgent):
                 agent_name=self.name,
                 success=False,
                 error=(
-                    "SMTP not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS "
-                    "in .env to enable email sending."
+                    "Email not configured. Set RESEND_API_KEY (recommended) or "
+                    "SMTP_HOST + SMTP_USER + SMTP_PASS in Railway environment variables."
                 ),
             )
 
@@ -312,6 +317,71 @@ class CommunicationAgent(BaseAgent):
             success=True,
             output=output,
         )
+
+    async def _send_email_resend(self, task, to, subject, body, cc, api_key) -> AgentResult:
+        """Send email via Resend API — simpler setup, better deliverability than SMTP."""
+        from_email = task.params.get("from_email", "cipher@elysianprotocol.io")
+
+        try:
+            payload = {
+                "from": from_email,
+                "to": [to] if isinstance(to, str) else to,
+                "subject": subject,
+            }
+            # Detect HTML vs plain text
+            if "<" in body and ">" in body:
+                payload["html"] = body
+            else:
+                payload["text"] = body
+
+            if cc:
+                payload["cc"] = cc if isinstance(cc, list) else [cc]
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                data = resp.json()
+
+            if resp.status_code >= 400:
+                error_msg = data.get("message", data.get("error", str(data)))
+                return AgentResult(
+                    task_id=task.task_id,
+                    agent_name=self.name,
+                    success=False,
+                    error=f"Resend API error: {error_msg}",
+                )
+
+            logger.info(f"Email sent via Resend to {to}: {subject}")
+
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=True,
+                output={
+                    "operation": "send_email",
+                    "provider": "resend",
+                    "to": to,
+                    "subject": subject,
+                    "status": "sent",
+                    "from": from_email,
+                    "email_id": data.get("id", ""),
+                    "sent_at": datetime.utcnow().isoformat(),
+                },
+            )
+
+        except Exception as e:
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                error=f"Resend email failed: {str(e)}",
+            )
 
     async def _read_email(self, task: AgentTask) -> AgentResult:
         """Read emails — real IMAP. Requires IMAP config."""
