@@ -538,6 +538,7 @@ async def process_chat(
     total_latency = 0.0
     model_used = ""
     tool_execution_log = []  # Track what tools were called
+    accumulated_content = []  # Track all text content across rounds
 
     # ── FORCED TOOL ROUTING ──────────────────────────────────────────
     # Detect specific request types and force the LLM to call the right tool
@@ -615,6 +616,11 @@ async def process_chat(
         model_used = result.get("model_used", "")
 
         tool_calls = result.get("tool_calls", [])
+
+        # Accumulate any text content the LLM produced alongside tool calls
+        round_content = result.get("content", "").strip()
+        if round_content:
+            accumulated_content.append(round_content)
 
         if not tool_calls:
             # No tool calls — LLM produced a final text response
@@ -735,17 +741,41 @@ async def process_chat(
 
     # QUALITY GATE — Validate the LLM response before returning.
     # If the response is empty or trivially short, retry once with an explicit nudge.
-    # This implements the "iterative refinement" pattern: check → fix → finalize.
+    # Also catches cases where the LLM only produced preamble text ("Let me search...")
+    # but never delivered the actual analysis.
     final_content = result.get("content", "").strip()
 
-    if not final_content or len(final_content) < 5:
-        logger.warning("Quality gate: Empty or near-empty response — retrying once")
+    # Detect stub responses — LLM said "Let me search/analyze..." but never delivered
+    STUB_PATTERNS = [
+        "let me search", "let me look", "let me find", "let me analyze",
+        "i'll search", "i'll look", "searching for", "looking for",
+    ]
+    is_stub = (
+        len(final_content) < 150
+        and any(p in final_content.lower() for p in STUB_PATTERNS)
+        and tool_execution_log  # Tools were used, so we have data
+    )
+
+    if not final_content or len(final_content) < 5 or is_stub:
+        gate_reason = "stub/preamble only" if is_stub else "empty or near-empty"
+        logger.warning(f"Quality gate: {gate_reason} response ({len(final_content)} chars) — retrying once")
+
+        # Build a nudge that includes context about what tools found
+        tool_context = ""
+        if tool_execution_log:
+            for tl in tool_execution_log[-3:]:  # Last 3 tool results
+                preview = tl.get("result_preview", "")[:500]
+                if preview:
+                    tool_context += f"\n[Tool {tl['tool']} returned: {preview}]\n"
+
         retry_messages = messages + [
             {"role": "assistant", "content": final_content or ""},
             {"role": "user", "content": (
-                "[System: Your previous response was empty or incomplete. "
-                "Please provide a complete, helpful response to the user's original message. "
-                "If you need to use tools, do so now.]"
+                "[System: Your previous response was incomplete — you only produced a preamble "
+                "but never delivered the actual analysis. You already have tool results available. "
+                "Please provide a COMPLETE, DETAILED response to the user's original message NOW. "
+                "Synthesize all the data you've collected into a comprehensive answer. "
+                "Do NOT call any more tools — just write the final response.]"
             )},
         ]
         try:
