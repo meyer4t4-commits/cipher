@@ -1,11 +1,14 @@
 """
-Scout Agent v2.0.0 — High-velocity lead discovery for the Global Expansion Pulse.
+Scout Agent v3.0.0 — Lead discovery + email finding for the Global Expansion Pulse.
 
 Finds companies that are high-revenue but "automation-poor" — meaning they
 have outdated tech stacks, manual processes, weak online presence, or gaps
 where Cipher's agent ecosystem could be plugged in.
 
-Uses Brave Search API (required) with DuckDuckGo fallback.
+NEW in v3: Email discovery via Hunter.io API + smart pattern guessing.
+Full pipeline: find companies → find their emails → pass to outreach.
+
+Uses Brave Search API with DuckDuckGo fallback.
 NO MOCK DATA — fails honestly if no search backend is available.
 
 Capabilities:
@@ -13,6 +16,8 @@ Capabilities:
 2. scan_company — Deep-scan a specific company for automation gaps
 3. build_target_list — Generate a ranked shortlist of targets from scan results
 4. score_lead — Score a single lead on automation-readiness (0-100)
+5. find_emails — Find business contact emails for a domain (Hunter.io + pattern guessing)
+6. find_and_enrich — Full pipeline: scan industry → find emails → return enriched leads
 """
 
 import json
@@ -34,20 +39,23 @@ class ScoutAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="scout_agent",
-            description="High-velocity lead discovery — finds automation-poor companies ripe for Cipher integration",
-            version="2.0.0",
+            description="Lead discovery + email finding — finds automation-poor companies and their contact emails",
+            version="3.0.0",
             capabilities=[
                 AgentCapability(name="scan_industry", description="Scan an industry for companies with weak automation/tech infrastructure", category="research", timeout_seconds=90),
                 AgentCapability(name="scan_company", description="Deep-scan a specific company for automation gaps and integration opportunities", category="research", timeout_seconds=60),
                 AgentCapability(name="build_target_list", description="Generate a ranked shortlist of 5-10 targets from industry scan results", category="research", timeout_seconds=45),
                 AgentCapability(name="score_lead", description="Score a single lead on automation-readiness (0-100)", category="research", timeout_seconds=30),
+                AgentCapability(name="find_emails", description="Find business contact emails for a domain via Hunter.io + pattern guessing", category="research", timeout_seconds=30),
+                AgentCapability(name="find_and_enrich", description="Full pipeline: scan industry, find emails for each company, return enriched leads ready for outreach", category="research", timeout_seconds=180),
             ],
         )
 
         self._data_dir = Path("./data/expansion_pulse/scout")
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self.brave_api_key = os.getenv("BRAVE_SEARCH_API_KEY", "")
-        logger.info("ScoutAgent v2.0.0 initialized — no mock data")
+        self.hunter_api_key = os.getenv("HUNTER_API_KEY", "")
+        logger.info("ScoutAgent v3.0.0 initialized — with email discovery")
 
     def requires_approval_for(self, instruction: str) -> bool:
         return False
@@ -68,6 +76,8 @@ class ScoutAgent(BaseAgent):
                 "scan_company": self._scan_company,
                 "build_target_list": self._build_target_list,
                 "score_lead": self._score_lead,
+                "find_emails": self._find_emails,
+                "find_and_enrich": self._find_and_enrich,
             }.get(operation)
             if not handler:
                 return AgentResult(task_id=task.task_id, agent_name=self.name, success=False, error=f"Unknown operation: {operation}")
@@ -396,6 +406,251 @@ class ScoutAgent(BaseAgent):
             "recommendation": "Proceed to Analyst" if total_score >= 50 else "Low priority — skip or revisit later",
             "scored_at": datetime.utcnow().isoformat(),
         }
+
+        return AgentResult(task_id=task.task_id, agent_name=self.name, success=True, output=output)
+
+    # ═══════════════════════════════════════════════════════════════
+    # EMAIL DISCOVERY — Hunter.io API + pattern guessing + web scraping
+    # ═══════════════════════════════════════════════════════════════
+
+    async def _find_emails(self, task: AgentTask) -> AgentResult:
+        """Find business contact emails for a domain.
+        Uses Hunter.io API if available, with web-scraping fallback."""
+        domain = task.params.get("domain", "")
+        company = task.params.get("company", "")
+        url = task.params.get("url", "")
+
+        # Extract domain from URL if not provided
+        if not domain and url:
+            parts = url.replace("https://", "").replace("http://", "").split("/")
+            domain = parts[0].replace("www.", "")
+        if not domain and company:
+            # Try to find domain from company name
+            results = await self._web_search(f'"{company}" official website', count=3)
+            for r in results:
+                r_url = r.get("url", "")
+                if r_url and company.lower().replace(" ", "") in r_url.lower().replace("www.", ""):
+                    parts = r_url.replace("https://", "").replace("http://", "").split("/")
+                    domain = parts[0].replace("www.", "")
+                    break
+
+        if not domain:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error="Could not determine domain. Provide 'domain', 'url', or 'company'.",
+            )
+
+        emails_found = []
+        source = "none"
+
+        # Method 1: Hunter.io Domain Search API
+        if self.hunter_api_key:
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(
+                        "https://api.hunter.io/v2/domain-search",
+                        params={"domain": domain, "api_key": self.hunter_api_key, "limit": 10},
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json().get("data", {})
+                        for email_entry in data.get("emails", []):
+                            emails_found.append({
+                                "email": email_entry.get("value", ""),
+                                "first_name": email_entry.get("first_name", ""),
+                                "last_name": email_entry.get("last_name", ""),
+                                "position": email_entry.get("position", ""),
+                                "department": email_entry.get("department", ""),
+                                "confidence": email_entry.get("confidence", 0),
+                                "source": "hunter.io",
+                            })
+                        # Get the email pattern
+                        pattern = data.get("pattern", "")
+                        if emails_found:
+                            source = "hunter.io"
+                            logger.info(f"Hunter.io found {len(emails_found)} emails for {domain}")
+            except Exception as e:
+                logger.warning(f"Hunter.io API failed for {domain}: {e}")
+
+        # Method 2: Web scraping for contact emails
+        if not emails_found:
+            import re
+            contact_pages = [
+                f"https://{domain}/contact",
+                f"https://{domain}/about",
+                f"https://{domain}/contact-us",
+                f"https://www.{domain}/contact",
+            ]
+            for page_url in contact_pages:
+                try:
+                    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                        resp = await client.get(page_url, headers={"User-Agent": "Mozilla/5.0"})
+                        if resp.status_code == 200:
+                            # Find emails in page HTML
+                            found = re.findall(
+                                r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+                                resp.text[:50000],
+                            )
+                            # Filter out common non-person emails but keep business ones
+                            skip_prefixes = ["wixpress", "sentry", "example", "test", "noreply", "no-reply"]
+                            for email in set(found):
+                                if not any(email.lower().startswith(p) for p in skip_prefixes):
+                                    emails_found.append({
+                                        "email": email,
+                                        "first_name": "",
+                                        "last_name": "",
+                                        "position": "",
+                                        "confidence": 40,
+                                        "source": f"scraped from {page_url}",
+                                    })
+                            if emails_found:
+                                source = "web_scrape"
+                                break
+                except Exception:
+                    continue
+
+        # Method 3: Search-based email discovery
+        if not emails_found:
+            search_results = await self._web_search(f'"{domain}" email contact "@{domain}"', count=5)
+            import re
+            for r in search_results:
+                text = r.get("description", "") + " " + r.get("title", "")
+                found = re.findall(
+                    r'[a-zA-Z0-9._%+-]+@' + re.escape(domain),
+                    text,
+                )
+                for email in set(found):
+                    emails_found.append({
+                        "email": email,
+                        "first_name": "",
+                        "last_name": "",
+                        "position": "",
+                        "confidence": 30,
+                        "source": "search_results",
+                    })
+            if emails_found:
+                source = "search"
+
+        # Method 4: Common pattern guessing as last resort
+        if not emails_found:
+            common_patterns = [
+                f"info@{domain}",
+                f"hello@{domain}",
+                f"contact@{domain}",
+                f"support@{domain}",
+                f"sales@{domain}",
+            ]
+            for email in common_patterns:
+                emails_found.append({
+                    "email": email,
+                    "first_name": "",
+                    "last_name": "",
+                    "position": "",
+                    "confidence": 15,
+                    "source": "pattern_guess",
+                })
+            source = "pattern_guess"
+
+        # Deduplicate by email address
+        seen = set()
+        unique_emails = []
+        for e in emails_found:
+            if e["email"].lower() not in seen:
+                seen.add(e["email"].lower())
+                unique_emails.append(e)
+
+        # Sort by confidence
+        unique_emails.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+
+        output = {
+            "domain": domain,
+            "company": company,
+            "emails_found": len(unique_emails),
+            "primary_source": source,
+            "emails": unique_emails[:10],
+            "best_email": unique_emails[0]["email"] if unique_emails else None,
+            "best_confidence": unique_emails[0].get("confidence", 0) if unique_emails else 0,
+            "hunter_available": bool(self.hunter_api_key),
+            "discovered_at": datetime.utcnow().isoformat(),
+        }
+
+        return AgentResult(task_id=task.task_id, agent_name=self.name, success=True, output=output)
+
+    async def _find_and_enrich(self, task: AgentTask) -> AgentResult:
+        """Full pipeline: scan industry → find emails for each company → return enriched leads."""
+        industry = task.params.get("industry", "")
+        location = task.params.get("location", "United States")
+        max_leads = task.params.get("max_leads", 10)
+
+        if not industry:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error="Missing 'industry'. Provide the industry/niche to scan.",
+            )
+
+        # Step 1: Scan industry
+        await self.emit_progress(f"Scanning {industry} for leads...")
+        scan_task = AgentTask(
+            agent_name=self.name, instruction="scan",
+            params={"operation": "scan_industry", "industry": industry, "location": location},
+        )
+        scan_result = await self._scan_industry(scan_task)
+
+        if not scan_result.success:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error=f"Industry scan failed: {scan_result.error}",
+            )
+
+        targets = scan_result.output.get("targets", [])[:max_leads]
+
+        # Step 2: Find emails for each target
+        enriched = []
+        for i, target in enumerate(targets):
+            domain = target.get("domain", "")
+            company_name = target.get("company_name", "")
+            await self.emit_progress(f"Finding emails for {company_name or domain} ({i+1}/{len(targets)})...")
+
+            email_task = AgentTask(
+                agent_name=self.name, instruction="find emails",
+                params={"operation": "find_emails", "domain": domain, "company": company_name},
+            )
+            email_result = await self._find_emails(email_task)
+
+            enriched_lead = {
+                **target,
+                "emails": email_result.output.get("emails", []) if email_result.success else [],
+                "best_email": email_result.output.get("best_email") if email_result.success else None,
+                "email_confidence": email_result.output.get("best_confidence", 0) if email_result.success else 0,
+                "email_source": email_result.output.get("primary_source", "none") if email_result.success else "none",
+            }
+            enriched.append(enriched_lead)
+
+        # Sort by email confidence
+        enriched.sort(key=lambda x: x.get("email_confidence", 0), reverse=True)
+
+        # Separate into ready-to-email and needs-manual-lookup
+        ready = [l for l in enriched if l.get("email_confidence", 0) >= 30]
+        needs_manual = [l for l in enriched if l.get("email_confidence", 0) < 30]
+
+        output = {
+            "industry": industry,
+            "location": location,
+            "total_leads": len(enriched),
+            "ready_to_email": len(ready),
+            "needs_manual_lookup": len(needs_manual),
+            "enriched_leads": enriched,
+            "ready_leads": ready,
+            "pipeline_summary": (
+                f"Found {len(enriched)} leads in {industry}. "
+                f"{len(ready)} have emails ready for outreach. "
+                f"{len(needs_manual)} need manual email lookup."
+            ),
+            "next_step": "Pass ready_leads to outreach_agent for email drafting, then communication_agent for sending.",
+            "enriched_at": datetime.utcnow().isoformat(),
+        }
+
+        filename = f"enriched_leads_{industry.replace(' ', '_')}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        (self._data_dir / filename).write_text(json.dumps(output, indent=2))
 
         return AgentResult(task_id=task.task_id, agent_name=self.name, success=True, output=output)
 

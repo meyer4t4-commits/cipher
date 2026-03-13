@@ -1,8 +1,8 @@
 """
-Provisioning Agent v2.0.0 — Agentic client onboarding + business automation.
+Provisioning Agent v3.0.0 — Agentic client onboarding + Shopify API + business automation.
 
 Truly agentic: uses LLM to generate custom content, creates real documents,
-and can execute multi-step business workflows.
+connects to Shopify Admin API to read/modify stores, and executes multi-step workflows.
 
 Capabilities:
 1. provision_client — Full client provisioning (config + docs + activation plan)
@@ -14,6 +14,9 @@ Capabilities:
 7. shopify_audit — Audit a Shopify store and generate improvement plan
 8. llc_formation — Generate LLC formation documents and filing checklist
 9. patent_draft — Draft provisional patent application outline
+10. shopify_read — Read products, pages, blogs, metafields from a Shopify store
+11. shopify_update — Update products, descriptions, SEO, pages on a Shopify store
+12. shopify_fix — Full auto-fix: analyze + fix products, SEO, pages, navigation
 """
 
 import json
@@ -22,6 +25,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
+
+import httpx
 
 from app.agents.base import BaseAgent
 from app.agents.models import AgentCapability, AgentResult, AgentTask
@@ -39,7 +44,7 @@ class ProvisioningAgent(BaseAgent):
                 "(LLC, patents, proposals, SOWs), Shopify store audits, and training materials. "
                 "Uses LLM intelligence for customized outputs."
             ),
-            version="2.0.0",
+            version="3.0.0",
             capabilities=[
                 AgentCapability(name="provision_client", description="Full client provisioning — config, docs, activation plan, training", category="execution", timeout_seconds=120),
                 AgentCapability(name="generate_config", description="Generate client-specific daemon configuration", category="execution", timeout_seconds=30),
@@ -50,6 +55,9 @@ class ProvisioningAgent(BaseAgent):
                 AgentCapability(name="shopify_audit", description="Audit Shopify store and generate optimization plan", category="analysis", timeout_seconds=120),
                 AgentCapability(name="llc_formation", description="Generate LLC formation documents and state-specific filing checklist", category="content", timeout_seconds=90),
                 AgentCapability(name="patent_draft", description="Draft provisional patent application outline with claims", category="content", timeout_seconds=120),
+                AgentCapability(name="shopify_read", description="Read products, pages, blogs, metafields, themes from a Shopify store via Admin API", category="data", timeout_seconds=30),
+                AgentCapability(name="shopify_update", description="Update products, descriptions, SEO meta, pages, navigation on a Shopify store", category="execution", timeout_seconds=60),
+                AgentCapability(name="shopify_fix", description="Full auto-fix: analyze store, fix SEO, product descriptions, pages, navigation", category="execution", timeout_seconds=180),
             ],
         )
 
@@ -59,7 +67,13 @@ class ProvisioningAgent(BaseAgent):
         self._clients_dir.mkdir(parents=True, exist_ok=True)
         self._docs_dir = Path("./data/documents")
         self._docs_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("ProvisioningAgent v2.0.0 initialized — agentic mode")
+
+        # Shopify API config
+        self.shopify_store = os.getenv("SHOPIFY_STORE", "")  # e.g. "tallowroots" (without .myshopify.com)
+        self.shopify_token = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
+        self.shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-01")
+
+        logger.info(f"ProvisioningAgent v3.0.0 initialized — Shopify API {'configured' if self.shopify_token else 'NOT configured'}")
 
     def requires_approval_for(self, instruction: str) -> bool:
         return True
@@ -85,6 +99,9 @@ class ProvisioningAgent(BaseAgent):
                 "shopify_audit": self._shopify_audit,
                 "llc_formation": self._llc_formation,
                 "patent_draft": self._patent_draft,
+                "shopify_read": self._shopify_read,
+                "shopify_update": self._shopify_update,
+                "shopify_fix": self._shopify_fix,
             }.get(operation)
 
             if not handler:
@@ -814,6 +831,312 @@ class ProvisioningAgent(BaseAgent):
                 "generated_at": datetime.utcnow().isoformat(),
             },
         )
+
+    # ═══════════════════════════════════════════════════════════════
+    # SHOPIFY ADMIN API — Real store access
+    # ═══════════════════════════════════════════════════════════════
+
+    def _shopify_base_url(self, store: str = "") -> str:
+        """Build Shopify Admin API base URL."""
+        s = store or self.shopify_store
+        if not s:
+            return ""
+        # Handle both "tallowroots" and "tallowroots.myshopify.com"
+        if ".myshopify.com" not in s:
+            s = f"{s}.myshopify.com"
+        return f"https://{s}/admin/api/{self.shopify_api_version}"
+
+    def _shopify_headers(self, token: str = "") -> dict:
+        """Build Shopify API headers."""
+        t = token or self.shopify_token
+        return {
+            "X-Shopify-Access-Token": t,
+            "Content-Type": "application/json",
+        }
+
+    async def _shopify_api(self, method: str, endpoint: str, data: dict = None,
+                            store: str = "", token: str = "") -> dict:
+        """Make a Shopify Admin API call. Returns {"ok": bool, "data": ..., "error": ...}"""
+        base = self._shopify_base_url(store)
+        t = token or self.shopify_token
+        if not base or not t:
+            return {"ok": False, "error": "Shopify not configured. Set SHOPIFY_STORE and SHOPIFY_ACCESS_TOKEN in .env"}
+
+        url = f"{base}/{endpoint}.json"
+        headers = self._shopify_headers(t)
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                if method == "GET":
+                    resp = await client.get(url, headers=headers)
+                elif method == "PUT":
+                    resp = await client.put(url, headers=headers, json=data)
+                elif method == "POST":
+                    resp = await client.post(url, headers=headers, json=data)
+                elif method == "DELETE":
+                    resp = await client.delete(url, headers=headers)
+                else:
+                    return {"ok": False, "error": f"Unknown method: {method}"}
+
+                if resp.status_code in (200, 201):
+                    return {"ok": True, "data": resp.json()}
+                else:
+                    return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:500]}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    async def _shopify_read(self, task: AgentTask) -> AgentResult:
+        """Read data from Shopify store — products, pages, blogs, metafields, themes."""
+        resource = task.params.get("resource", "products")  # products, pages, blogs, themes, smart_collections, custom_collections
+        store = task.params.get("store", "")
+        token = task.params.get("token", "")
+        resource_id = task.params.get("resource_id", "")  # Optional: specific ID
+        limit = task.params.get("limit", 50)
+
+        endpoint_map = {
+            "products": "products",
+            "pages": "pages",
+            "blogs": "blogs",
+            "themes": "themes",
+            "collections": "smart_collections",
+            "custom_collections": "custom_collections",
+            "orders": "orders",
+            "customers": "customers",
+        }
+
+        endpoint = endpoint_map.get(resource, resource)
+        if resource_id:
+            endpoint = f"{endpoint}/{resource_id}"
+        else:
+            endpoint = f"{endpoint}?limit={limit}"
+
+        result = await self._shopify_api("GET", endpoint, store=store, token=token)
+
+        if not result["ok"]:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error=f"Shopify API error: {result['error']}",
+            )
+
+        return AgentResult(
+            task_id=task.task_id, agent_name=self.name, success=True,
+            output={
+                "resource": resource,
+                "data": result["data"],
+                "store": store or self.shopify_store,
+                "read_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+    async def _shopify_update(self, task: AgentTask) -> AgentResult:
+        """Update a Shopify resource — product, page, blog post, metafield."""
+        resource = task.params.get("resource", "")  # "product", "page"
+        resource_id = task.params.get("resource_id", "")
+        updates = task.params.get("updates", {})
+        store = task.params.get("store", "")
+        token = task.params.get("token", "")
+
+        if not resource or not resource_id or not updates:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error="Provide 'resource' (product/page), 'resource_id', and 'updates' dict.",
+            )
+
+        # Map singular to endpoint
+        endpoint = f"{resource}s/{resource_id}"
+
+        # Wrap updates in the resource key Shopify expects
+        payload = {resource: updates}
+
+        result = await self._shopify_api("PUT", endpoint, data=payload, store=store, token=token)
+
+        if not result["ok"]:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error=f"Shopify update failed: {result['error']}",
+            )
+
+        return AgentResult(
+            task_id=task.task_id, agent_name=self.name, success=True,
+            output={
+                "resource": resource,
+                "resource_id": resource_id,
+                "updates_applied": list(updates.keys()),
+                "result": result["data"],
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+    async def _shopify_fix(self, task: AgentTask) -> AgentResult:
+        """Full auto-fix: read store → analyze with LLM → apply fixes."""
+        store = task.params.get("store", "")
+        token = task.params.get("token", "")
+        fix_scope = task.params.get("scope", "all")  # "seo", "products", "pages", "all"
+
+        # Step 1: Read products
+        await self.emit_progress("Reading store products...")
+        products_result = await self._shopify_api("GET", "products?limit=50", store=store, token=token)
+        if not products_result["ok"]:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error=f"Cannot access Shopify store: {products_result['error']}",
+            )
+
+        products = products_result["data"].get("products", [])
+
+        # Step 2: Read pages
+        await self.emit_progress("Reading store pages...")
+        pages_result = await self._shopify_api("GET", "pages?limit=50", store=store, token=token)
+        pages = pages_result["data"].get("pages", []) if pages_result["ok"] else []
+
+        # Step 3: Analyze with LLM
+        await self.emit_progress(f"Analyzing {len(products)} products and {len(pages)} pages...")
+
+        product_summary = []
+        for p in products[:20]:  # Cap at 20 for LLM context
+            product_summary.append({
+                "id": p["id"],
+                "title": p.get("title", ""),
+                "body_html_preview": (p.get("body_html", "") or "")[:200],
+                "seo_title": p.get("metafields_global_title_tag", "") or "",
+                "seo_description": p.get("metafields_global_description_tag", "") or "",
+                "tags": p.get("tags", ""),
+                "vendor": p.get("vendor", ""),
+                "product_type": p.get("product_type", ""),
+                "images_count": len(p.get("images", [])),
+                "variants_count": len(p.get("variants", [])),
+            })
+
+        page_summary = []
+        for pg in pages[:10]:
+            page_summary.append({
+                "id": pg["id"],
+                "title": pg.get("title", ""),
+                "body_html_preview": (pg.get("body_html", "") or "")[:200],
+            })
+
+        analysis = await self._llm_generate(
+            system_prompt=(
+                "You are a Shopify store optimization expert. Analyze this store data and output "
+                "a JSON object with specific fixes. Format:\n"
+                '{"product_fixes": [{"id": 123, "title": "new title", "body_html": "new description", '
+                '"seo_title": "...", "seo_description": "..."}], '
+                '"page_fixes": [{"id": 456, "title": "...", "body_html": "..."}], '
+                '"missing_pages": [{"title": "FAQ", "body_html": "..."}], '
+                '"summary": "what was fixed and why"}\n'
+                "Focus on: SEO titles/descriptions, compelling product descriptions, "
+                "missing pages (FAQ, About, Shipping, Returns), and weak content. "
+                "Output ONLY valid JSON."
+            ),
+            user_prompt=(
+                f"Store products:\n{json.dumps(product_summary, indent=2)}\n\n"
+                f"Store pages:\n{json.dumps(page_summary, indent=2)}\n\n"
+                f"Fix scope: {fix_scope}\n"
+                "Analyze and output the fix plan as JSON."
+            ),
+            max_tokens=4096,
+        )
+
+        # Parse LLM fix plan
+        fix_plan = {}
+        if analysis:
+            try:
+                # Try to extract JSON from the response
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', analysis)
+                if json_match:
+                    fix_plan = json.loads(json_match.group())
+            except Exception as e:
+                logger.warning(f"Could not parse LLM fix plan as JSON: {e}")
+
+        if not fix_plan:
+            return AgentResult(
+                task_id=task.task_id, agent_name=self.name, success=False,
+                error="LLM analysis did not produce a valid fix plan.",
+            )
+
+        # Step 4: Apply fixes
+        applied_fixes = []
+        errors = []
+
+        # Fix products
+        for pfix in fix_plan.get("product_fixes", []):
+            pid = pfix.get("id")
+            if not pid:
+                continue
+            updates = {}
+            if pfix.get("title"):
+                updates["title"] = pfix["title"]
+            if pfix.get("body_html"):
+                updates["body_html"] = pfix["body_html"]
+            if pfix.get("seo_title"):
+                updates["metafields_global_title_tag"] = pfix["seo_title"]
+            if pfix.get("seo_description"):
+                updates["metafields_global_description_tag"] = pfix["seo_description"]
+            if pfix.get("tags"):
+                updates["tags"] = pfix["tags"]
+
+            if updates:
+                await self.emit_progress(f"Fixing product {pid}...")
+                result = await self._shopify_api("PUT", f"products/{pid}", data={"product": updates}, store=store, token=token)
+                if result["ok"]:
+                    applied_fixes.append({"type": "product", "id": pid, "fields": list(updates.keys())})
+                else:
+                    errors.append({"type": "product", "id": pid, "error": result["error"]})
+
+        # Fix pages
+        for pgfix in fix_plan.get("page_fixes", []):
+            pgid = pgfix.get("id")
+            if not pgid:
+                continue
+            updates = {}
+            if pgfix.get("title"):
+                updates["title"] = pgfix["title"]
+            if pgfix.get("body_html"):
+                updates["body_html"] = pgfix["body_html"]
+
+            if updates:
+                await self.emit_progress(f"Fixing page {pgid}...")
+                result = await self._shopify_api("PUT", f"pages/{pgid}", data={"page": updates}, store=store, token=token)
+                if result["ok"]:
+                    applied_fixes.append({"type": "page", "id": pgid, "fields": list(updates.keys())})
+                else:
+                    errors.append({"type": "page", "id": pgid, "error": result["error"]})
+
+        # Create missing pages
+        for new_page in fix_plan.get("missing_pages", []):
+            title = new_page.get("title", "")
+            body = new_page.get("body_html", "")
+            if title and body:
+                await self.emit_progress(f"Creating page: {title}...")
+                result = await self._shopify_api(
+                    "POST", "pages",
+                    data={"page": {"title": title, "body_html": body, "published": True}},
+                    store=store, token=token,
+                )
+                if result["ok"]:
+                    applied_fixes.append({"type": "new_page", "title": title})
+                else:
+                    errors.append({"type": "new_page", "title": title, "error": result["error"]})
+
+        output = {
+            "store": store or self.shopify_store,
+            "products_analyzed": len(products),
+            "pages_analyzed": len(pages),
+            "fixes_applied": len(applied_fixes),
+            "errors": len(errors),
+            "applied": applied_fixes,
+            "error_details": errors,
+            "summary": fix_plan.get("summary", "Fixes applied"),
+            "fix_scope": fix_scope,
+            "fixed_at": datetime.utcnow().isoformat(),
+        }
+
+        # Save fix report
+        filename = f"shopify_fix_{(store or self.shopify_store).replace('.', '_')}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        (self._data_dir / filename).write_text(json.dumps(output, indent=2))
+
+        return AgentResult(task_id=task.task_id, agent_name=self.name, success=True, output=output)
 
     async def verify(self, result: AgentResult) -> bool:
         if not isinstance(result.output, dict):
