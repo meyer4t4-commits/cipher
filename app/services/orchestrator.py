@@ -425,6 +425,91 @@ async def process_chat(
             live_data_context += search_data
             logger.info("Live search data injected into context")
 
+    # ═══════════════════════════════════════════════════════════════════
+    # SHOPIFY HARD BYPASS — skip LLM routing entirely for Shopify requests
+    # The LLM can't reliably route to provisioning_agent, so we call it
+    # directly and let the LLM format the results.
+    # ═══════════════════════════════════════════════════════════════════
+    _shopify_keywords = ["shopify", "tallowroots", "tallow roots", "my store products",
+                         "store products", "product catalog", "store inventory"]
+    if any(kw in msg_lower for kw in _shopify_keywords):
+        logger.info(f"[SHOPIFY BYPASS] Detected Shopify request — calling provisioning_agent directly")
+        try:
+            from app.api.agents import _init_agents
+            from app.agents.registry import get_agent
+            from app.agents.models import AgentTask
+            from app.services.tool_calling import _auto_detect_operation
+
+            _init_agents()
+            agent = get_agent("provisioning_agent")
+            if agent:
+                # Auto-detect operation from instruction
+                params = _auto_detect_operation("provisioning_agent", request.message, {})
+                if not params.get("operation"):
+                    params["operation"] = "shopify_read"
+                if not params.get("resource"):
+                    params["resource"] = "products"
+                logger.info(f"[SHOPIFY BYPASS] Params: {params}")
+
+                task = AgentTask(
+                    agent_name="provisioning_agent",
+                    instruction=request.message,
+                    params=params,
+                )
+                result = await agent.run(task)
+                logger.info(f"[SHOPIFY BYPASS] Agent result: success={result.success}, error={result.error}")
+
+                if result.success and result.output:
+                    # Let the LLM format the raw data into a nice response
+                    import json as _json
+                    raw_data = _json.dumps(result.output, indent=2, default=str)[:8000]
+                    format_messages = [
+                        {"role": "system", "content": (
+                            "You are Cipher. The user asked about their Shopify store. "
+                            "Below is the REAL data from the Shopify Admin API. "
+                            "Format it clearly — list products with names, prices, descriptions, "
+                            "variants, inventory, and any other useful details. "
+                            "Be thorough but organized. This is REAL DATA, not fabricated."
+                        )},
+                        {"role": "user", "content": (
+                            f"User asked: {request.message}\n\n"
+                            f"Shopify API response:\n{raw_data}"
+                        )},
+                    ]
+                    format_result = await chat_completion(
+                        messages=format_messages,
+                        model_tier=model_tier,
+                        max_tokens=4096,
+                        temperature=0.3,
+                    )
+                    formatted_msg = ""
+                    if format_result and isinstance(format_result, dict):
+                        formatted_msg = format_result.get("content", "")
+                    if not formatted_msg:
+                        formatted_msg = f"Here's your Shopify data:\n\n```json\n{raw_data[:4000]}\n```"
+
+                    return ChatResponse(
+                        message=formatted_msg,
+                        conversation_id=conversation_id,
+                        model_used=format_result.get("model_used", "") if isinstance(format_result, dict) else "unknown",
+                        tokens_used=format_result.get("total_tokens", 0) if isinstance(format_result, dict) else 0,
+                        cost_usd=format_result.get("cost_usd", 0.0) if isinstance(format_result, dict) else 0.0,
+                    )
+                else:
+                    # Agent failed — log the error and let LLM handle gracefully
+                    logger.error(f"[SHOPIFY BYPASS] Agent failed: {result.error}")
+                    live_data_context += (
+                        f"\n\n[SHOPIFY AGENT ERROR — DO NOT HALLUCINATE]\n"
+                        f"The Shopify Admin API call failed with: {result.error}\n"
+                        f"Tell the user exactly what went wrong. Do NOT pretend to have data.\n"
+                    )
+            else:
+                logger.error("[SHOPIFY BYPASS] provisioning_agent not found in registry!")
+        except Exception as e:
+            logger.error(f"[SHOPIFY BYPASS] Exception: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[SHOPIFY BYPASS] Traceback: {traceback.format_exc()}")
+
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:
         cached = get_cached_response(
