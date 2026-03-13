@@ -748,11 +748,20 @@ async def process_chat(
     # Detect stub responses — LLM said "Let me search/analyze..." but never delivered
     STUB_PATTERNS = [
         "let me search", "let me look", "let me find", "let me analyze",
-        "i'll search", "i'll look", "searching for", "looking for",
+        "let me get", "let me check", "let me gather", "let me pull",
+        "let me fetch", "let me retrieve", "let me examine", "let me investigate",
+        "i'll search", "i'll look", "i'll get", "i'll analyze", "i'll check",
+        "i'll gather", "i'll find", "i'll fetch", "i'll pull",
+        "searching for", "looking for", "gathering", "fetching",
+        "now let me", "now i'll", "next, let me", "next i'll",
     ]
+    content_lower = final_content.lower().strip()
+    # Stub if: matches a stub pattern, OR ends with a colon (preamble that expects more)
+    ends_with_colon = content_lower.endswith(":")
+    matches_stub_pattern = any(p in content_lower for p in STUB_PATTERNS)
     is_stub = (
-        len(final_content) < 150
-        and any(p in final_content.lower() for p in STUB_PATTERNS)
+        len(final_content) < 300
+        and (matches_stub_pattern or ends_with_colon)
         and tool_execution_log  # Tools were used, so we have data
     )
 
@@ -763,18 +772,24 @@ async def process_chat(
         # Build a nudge that includes context about what tools found
         tool_context = ""
         if tool_execution_log:
-            for tl in tool_execution_log[-3:]:  # Last 3 tool results
-                preview = tl.get("result_preview", "")[:500]
+            for tl in tool_execution_log[-5:]:  # Last 5 tool results
+                preview = tl.get("result_preview", "")[:800]
                 if preview:
                     tool_context += f"\n[Tool {tl['tool']} returned: {preview}]\n"
+
+        # Include accumulated content from earlier rounds
+        accumulated_text = ""
+        if accumulated_content:
+            accumulated_text = "\n\n[Previously collected data across rounds:\n" + "\n---\n".join(accumulated_content[-5:]) + "\n]"
 
         retry_messages = messages + [
             {"role": "assistant", "content": final_content or ""},
             {"role": "user", "content": (
                 "[System: Your previous response was incomplete — you only produced a preamble "
                 "but never delivered the actual analysis. You already have tool results available. "
+                f"{tool_context}{accumulated_text}\n\n"
                 "Please provide a COMPLETE, DETAILED response to the user's original message NOW. "
-                "Synthesize all the data you've collected into a comprehensive answer. "
+                "Synthesize ALL the data above into a comprehensive answer. "
                 "Do NOT call any more tools — just write the final response.]"
             )},
         ]
