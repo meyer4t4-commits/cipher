@@ -69,11 +69,16 @@ class ProvisioningAgent(BaseAgent):
         self._docs_dir.mkdir(parents=True, exist_ok=True)
 
         # Shopify API config
-        self.shopify_store = os.getenv("SHOPIFY_STORE", "")  # e.g. "tallowroots" (without .myshopify.com)
+        self.shopify_store = os.getenv("SHOPIFY_STORE", "")  # e.g. "0kvur9-n0" (without .myshopify.com)
         self.shopify_token = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
-        self.shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-01")
+        self.shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2025-01")
 
-        logger.info(f"ProvisioningAgent v3.0.0 initialized — Shopify API {'configured' if self.shopify_token else 'NOT configured'}")
+        logger.info(
+            f"ProvisioningAgent v3.0.0 initialized — "
+            f"Shopify API {'configured' if self.shopify_token else 'NOT configured'}, "
+            f"store={self.shopify_store or 'NOT SET'}, "
+            f"api_version={self.shopify_api_version}"
+        )
 
     def requires_approval_for(self, instruction: str) -> bool:
         return True
@@ -860,10 +865,22 @@ class ProvisioningAgent(BaseAgent):
         base = self._shopify_base_url(store)
         t = token or self.shopify_token
         if not base or not t:
-            return {"ok": False, "error": "Shopify not configured. Set SHOPIFY_STORE and SHOPIFY_ACCESS_TOKEN in .env"}
+            missing = []
+            if not base:
+                missing.append("SHOPIFY_STORE")
+            if not t:
+                missing.append("SHOPIFY_ACCESS_TOKEN")
+            return {"ok": False, "error": f"Shopify not configured. Missing env vars: {', '.join(missing)}. "
+                    f"Store='{self.shopify_store}', token={'SET' if self.shopify_token else 'NOT SET'}"}
 
-        url = f"{base}/{endpoint}.json"
+        # Handle endpoints that already include .json or query params
+        if ".json" in endpoint or "?" in endpoint:
+            url = f"{base}/{endpoint}"
+        else:
+            url = f"{base}/{endpoint}.json"
         headers = self._shopify_headers(t)
+
+        logger.info(f"[Shopify API] {method} {url} (token={'***' + t[-4:] if len(t) > 4 else 'SET'})")
 
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -878,12 +895,24 @@ class ProvisioningAgent(BaseAgent):
                 else:
                     return {"ok": False, "error": f"Unknown method: {method}"}
 
+                logger.info(f"[Shopify API] Response: {resp.status_code} for {method} {endpoint}")
+
                 if resp.status_code in (200, 201):
                     return {"ok": True, "data": resp.json()}
                 else:
-                    return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:500]}"}
+                    error_detail = resp.text[:500]
+                    logger.error(f"[Shopify API] Error {resp.status_code}: {error_detail}")
+                    return {"ok": False, "error": f"HTTP {resp.status_code}: {error_detail}",
+                            "url": url, "status_code": resp.status_code}
+        except httpx.ConnectError as e:
+            logger.error(f"[Shopify API] Connection error: {e}")
+            return {"ok": False, "error": f"Connection failed to {url}: {e}"}
+        except httpx.TimeoutException as e:
+            logger.error(f"[Shopify API] Timeout: {e}")
+            return {"ok": False, "error": f"Timeout connecting to {url}: {e}"}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            logger.error(f"[Shopify API] Unexpected error: {type(e).__name__}: {e}")
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     async def _shopify_read(self, task: AgentTask) -> AgentResult:
         """Read data from Shopify store — products, pages, blogs, metafields, themes."""
@@ -906,9 +935,9 @@ class ProvisioningAgent(BaseAgent):
 
         endpoint = endpoint_map.get(resource, resource)
         if resource_id:
-            endpoint = f"{endpoint}/{resource_id}"
+            endpoint = f"{endpoint}/{resource_id}.json"
         else:
-            endpoint = f"{endpoint}?limit={limit}"
+            endpoint = f"{endpoint}.json?limit={limit}"
 
         result = await self._shopify_api("GET", endpoint, store=store, token=token)
 
