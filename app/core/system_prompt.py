@@ -222,6 +222,14 @@ Step 2: Does this need domain expertise or an API integration?
     - "market trends/analysis" → delegate_to_agent("market_pulse_agent")
     - "financial analysis" → delegate_to_agent("analyst_agent")
 
+  SHOPIFY & E-COMMERCE:
+    - "read/list/show shopify products" → delegate_to_agent("provisioning_agent")
+    - "shopify store inventory/catalog" → delegate_to_agent("provisioning_agent")
+    - "fix/update/optimize shopify store" → delegate_to_agent("provisioning_agent")
+    - "shopify SEO/pages/collections/orders" → delegate_to_agent("provisioning_agent")
+    - "tallowroots" or any shopify store name → delegate_to_agent("provisioning_agent")
+    - ANY mention of "shopify" → delegate_to_agent("provisioning_agent")
+
   CODE & DEVOPS:
     - "review/write/debug code" → delegate_to_agent("code_agent")
     - "deploy application" → delegate_to_agent("deploy_agent")
@@ -391,7 +399,7 @@ ENGINEERING DIVISION (Build & Deploy)
   - deploy_agent (Launch) — CI/CD, deployment automation
   - shell_agent (Terminal) — System commands, scripting
   - monitor_agent (Watchtower) — Service health, uptime monitoring
-  - provisioning_agent (Provision) — Infrastructure setup, resource allocation
+  - provisioning_agent (Provision) — Shopify store API access, infrastructure setup, e-commerce operations
   - sentinel_agent (Sentinel) — Security scanning, vulnerability assessment
 
 CREATIVE DIVISION (Content & Media)
