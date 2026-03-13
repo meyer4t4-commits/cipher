@@ -531,7 +531,7 @@ async def process_chat(
     #    The LLM can now call tools (run_shell, read_file, write_file, search_web,
     #    self_update, etc.) and we execute them, feeding results back until the LLM
     #    produces a final text response.
-    max_tool_rounds = 10  # Safety limit to prevent infinite loops
+    max_tool_rounds = 4  # Tight limit — forces synthesis after collecting data
     total_input_tokens = 0
     total_output_tokens = 0
     total_cost = 0.0
@@ -739,6 +739,45 @@ async def process_chat(
 
         logger.info(f"Tool round {round_num + 1} complete, {len(tool_calls)} tools executed")
 
+    # If we exhausted max rounds (LLM still wanted tools), force a synthesis pass
+    if round_num >= max_tool_rounds - 1 and tool_calls:
+        logger.warning(f"Hit max tool rounds ({max_tool_rounds}) — forcing synthesis")
+        synth_context = ""
+        if accumulated_content:
+            synth_context = "\n\n".join(accumulated_content[-5:])
+        for tl in tool_execution_log[-5:]:
+            preview = tl.get("result_preview", "")[:800]
+            if preview:
+                synth_context += f"\n[Tool {tl['tool']}: {preview}]\n"
+
+        synth_messages = messages + [
+            {"role": "user", "content": (
+                f"[System: You have collected enough data. Here is what you found:\n{synth_context}\n\n"
+                "Now write a COMPLETE, DETAILED response to the user's original question. "
+                "Do NOT say 'let me search' or 'let me get more information'. "
+                "Synthesize everything above into a comprehensive answer NOW.]"
+            )},
+        ]
+        try:
+            synth_result = await chat_completion_with_tools(
+                messages=synth_messages,
+                model_tier=model_tier,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                tools=[],  # No tools — must produce text
+            )
+            synth_content = synth_result.get("content", "").strip()
+            if synth_content and len(synth_content) > 50:
+                result = synth_result
+                total_input_tokens += synth_result.get("input_tokens", 0)
+                total_output_tokens += synth_result.get("output_tokens", 0)
+                total_cost += synth_result.get("cost_usd", 0.0)
+                total_latency += synth_result.get("latency_ms", 0.0)
+                model_used = synth_result.get("model_used", model_used)
+                logger.info("Forced synthesis produced response")
+        except Exception as e:
+            logger.warning(f"Forced synthesis failed: {e}")
+
     # QUALITY GATE — Validate the LLM response before returning.
     # If the response is empty or trivially short, retry once with an explicit nudge.
     # Also catches cases where the LLM only produced preamble text ("Let me search...")
@@ -794,12 +833,14 @@ async def process_chat(
             )},
         ]
         try:
+            # CRITICAL: Pass tools=[] so the LLM CANNOT call more tools
+            # and is forced to produce a text synthesis response
             retry_result = await chat_completion_with_tools(
                 messages=retry_messages,
                 model_tier=model_tier,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
-                tools=CIPHER_TOOLS,
+                tools=[],
             )
             retry_content = retry_result.get("content", "").strip()
             if retry_content and len(retry_content) > len(final_content):
