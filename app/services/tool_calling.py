@@ -1133,6 +1133,7 @@ async def _exec_delegate_to_agent(args: dict) -> str:
     from app.agents.registry import get_registry
     from app.agents.executor import get_executor
     from app.agents.models import AgentTask
+    from app.api.agents import _init_agents
 
     agent_name = args.get("agent_name", "")
     instruction = args.get("instruction", "")
@@ -1144,6 +1145,9 @@ async def _exec_delegate_to_agent(args: dict) -> str:
         return json.dumps({"error": "No instruction specified"})
 
     try:
+        # Ensure agents are registered (lazy-loads on first use)
+        _init_agents()
+
         registry = get_registry()
         executor = get_executor()
 
@@ -1151,7 +1155,7 @@ async def _exec_delegate_to_agent(args: dict) -> str:
             available = registry.list_agents() if hasattr(registry, 'list_agents') else []
             return json.dumps({
                 "error": f"Agent '{agent_name}' not found in registry",
-                "available_agents": [a.name for a in available] if available else [],
+                "available_agents": available,
             })
 
         # Build the task
@@ -1196,6 +1200,7 @@ async def _exec_chain_agents(args: dict) -> str:
     from app.agents.registry import get_registry
     from app.agents.executor import get_executor
     from app.agents.models import AgentTask
+    from app.api.agents import _init_agents
 
     steps = args.get("steps", [])
     description = args.get("description", "Agent chain execution")
@@ -1207,6 +1212,9 @@ async def _exec_chain_agents(args: dict) -> str:
         return json.dumps({"error": "Maximum 10 steps in a chain"})
 
     try:
+        # Ensure agents are registered (lazy-loads on first use)
+        _init_agents()
+
         registry = get_registry()
         executor = get_executor()
 
