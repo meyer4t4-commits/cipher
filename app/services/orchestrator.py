@@ -435,13 +435,12 @@ async def process_chat(
     if any(kw in msg_lower for kw in _shopify_keywords):
         logger.info(f"[SHOPIFY BYPASS] Detected Shopify request — calling provisioning_agent directly")
         try:
-            from app.api.agents import _init_agents
-            from app.agents.registry import get_agent
+            from app.agents.skills.provisioning_agent import ProvisioningAgent
             from app.agents.models import AgentTask
             from app.services.tool_calling import _auto_detect_operation
 
-            _init_agents()
-            agent = get_agent("provisioning_agent")
+            agent = ProvisioningAgent()
+            logger.info(f"[SHOPIFY BYPASS] Agent created — store={agent.shopify_store}, token={'SET' if agent.shopify_token else 'NOT SET'}")
             if agent:
                 # Auto-detect operation from instruction
                 params = _auto_detect_operation("provisioning_agent", request.message, {})
