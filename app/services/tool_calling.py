@@ -1128,6 +1128,86 @@ async def _exec_test_and_verify(args: dict) -> str:
         return json.dumps({"error": f"Verification failed: {str(e)[:300]}"})
 
 
+def _auto_detect_operation(agent_name: str, instruction: str, params: dict) -> dict:
+    """Auto-detect the 'operation' param from instruction text when the LLM omits it."""
+    instr = instruction.lower()
+
+    if agent_name == "provisioning_agent":
+        if any(kw in instr for kw in ["read", "list", "get", "fetch", "show", "products", "catalog", "what products", "inventory"]):
+            params["operation"] = "shopify_read"
+            if not params.get("resource"):
+                params["resource"] = "products"
+        elif any(kw in instr for kw in ["fix", "auto-fix", "repair", "optimize store"]):
+            params["operation"] = "shopify_fix"
+        elif any(kw in instr for kw in ["update", "change", "modify", "edit product", "edit page"]):
+            params["operation"] = "shopify_update"
+        elif any(kw in instr for kw in ["audit", "analyze store", "store review"]):
+            params["operation"] = "shopify_audit"
+        elif any(kw in instr for kw in ["llc", "formation", "incorporate"]):
+            params["operation"] = "llc_formation"
+        elif any(kw in instr for kw in ["patent"]):
+            params["operation"] = "patent_draft"
+        elif any(kw in instr for kw in ["proposal", "sow", "contract", "document"]):
+            params["operation"] = "create_document"
+        elif any(kw in instr for kw in ["onboard", "provision"]):
+            params["operation"] = "provision_client"
+        elif any(kw in instr for kw in ["pages", "blog"]):
+            params["operation"] = "shopify_read"
+            if "page" in instr:
+                params["resource"] = "pages"
+            elif "blog" in instr:
+                params["resource"] = "blogs"
+
+    elif agent_name == "scout_agent":
+        if any(kw in instr for kw in ["email", "find email", "discover email", "contact info"]):
+            params["operation"] = "find_emails"
+        elif any(kw in instr for kw in ["lead", "prospect", "company", "companies"]):
+            params["operation"] = "lead_gen"
+        elif any(kw in instr for kw in ["industry", "scan", "market", "landscape"]):
+            params["operation"] = "industry_scan"
+
+    elif agent_name == "outreach_agent":
+        if any(kw in instr for kw in ["cold email", "outreach", "campaign", "send email", "bulk email"]):
+            params["operation"] = "cold_email_campaign"
+        elif any(kw in instr for kw in ["followup", "follow up", "follow-up"]):
+            params["operation"] = "followup_sequence"
+
+    elif agent_name == "analyst_agent":
+        if any(kw in instr for kw in ["performance", "speed", "lighthouse", "pagespeed", "load time"]):
+            params["operation"] = "performance_audit"
+        elif any(kw in instr for kw in ["seo", "search engine", "meta tag", "keywords"]):
+            params["operation"] = "seo_audit"
+        elif any(kw in instr for kw in ["accessibility", "a11y", "wcag"]):
+            params["operation"] = "accessibility_audit"
+        elif any(kw in instr for kw in ["security", "ssl", "headers"]):
+            params["operation"] = "security_audit"
+        elif any(kw in instr for kw in ["full audit", "analyze", "review", "website audit"]):
+            params["operation"] = "full_audit"
+
+    elif agent_name == "apex_architect_agent":
+        if any(kw in instr for kw in ["competitor", "compare", "benchmark", "versus", "vs"]):
+            params["operation"] = "competitor_analysis"
+        elif any(kw in instr for kw in ["audit", "review", "analyze"]):
+            params["operation"] = "site_audit"
+        elif any(kw in instr for kw in ["social media", "content strategy"]):
+            params["operation"] = "social_media_strategy"
+        elif any(kw in instr for kw in ["product listing", "listing optimization"]):
+            params["operation"] = "product_listing"
+
+    elif agent_name == "research_agent":
+        params["operation"] = "web_search"
+
+    elif agent_name == "communication_agent":
+        if any(kw in instr for kw in ["email", "send email", "compose"]):
+            params["operation"] = "send_email"
+        elif any(kw in instr for kw in ["sms", "text message"]):
+            params["operation"] = "send_sms"
+        elif any(kw in instr for kw in ["slack"]):
+            params["operation"] = "send_slack"
+
+    return params
+
+
 async def _exec_delegate_to_agent(args: dict) -> str:
     """Delegate a task to a specific Cipher agent."""
     from app.agents.registry import get_registry
@@ -1137,12 +1217,19 @@ async def _exec_delegate_to_agent(args: dict) -> str:
 
     agent_name = args.get("agent_name", "")
     instruction = args.get("instruction", "")
-    params = args.get("params", {})
+    params = args.get("params", {}) or {}
 
     if not agent_name:
         return json.dumps({"error": "No agent_name specified"})
     if not instruction:
         return json.dumps({"error": "No instruction specified"})
+
+    # ── Auto-detect operation param for agents that require it ──
+    # The LLM often omits params.operation, so we infer it from the instruction text.
+    if not params.get("operation"):
+        params = _auto_detect_operation(agent_name, instruction, params)
+        if params.get("operation"):
+            logger.info(f"Auto-detected operation for {agent_name}: {params['operation']}")
 
     try:
         # Ensure agents are registered (lazy-loads on first use)
@@ -1162,7 +1249,7 @@ async def _exec_delegate_to_agent(args: dict) -> str:
         task = AgentTask(
             agent_name=agent_name,
             instruction=instruction,
-            params=params or {},
+            params=params,
         )
 
         # Execute via the executor
