@@ -714,13 +714,59 @@ except Exception as e:
             except Exception as e:
                 logger.warning(f"[ARTICLE] BS4 extraction failed: {e}")
 
+        # Method 3: Jina Reader API (renders JS server-side, returns clean markdown)
+        # No install needed — just an HTTP GET to r.jina.ai/{url}
+        if not article_text or len(article_text.strip()) < 100:
+            await self.emit_progress("Trying Jina Reader for JS-rendered content...")
+            try:
+                jina_url = f"https://r.jina.ai/{url}"
+                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                    resp = await client.get(jina_url, headers={
+                        "Accept": "text/plain",
+                        "User-Agent": "Mozilla/5.0",
+                    })
+                    if resp.status_code == 200 and len(resp.text.strip()) > 100:
+                        article_text = resp.text.strip()
+                        # Extract title from first markdown heading if present
+                        title_match = re.match(r'^#\s+(.+)', article_text)
+                        if title_match and not article_metadata.get("title"):
+                            article_metadata["title"] = title_match.group(1).strip()
+                        # Clean up
+                        article_text = re.sub(r'\n{3,}', '\n\n', article_text)
+                        logger.info(f"[ARTICLE] Extracted via Jina Reader: {len(article_text)} chars")
+            except Exception as e:
+                logger.warning(f"[ARTICLE] Jina Reader failed: {e}")
+
+        # Method 4: Google Cache fallback
+        if not article_text or len(article_text.strip()) < 100:
+            await self.emit_progress("Trying Google Cache fallback...")
+            try:
+                cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
+                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                    resp = await client.get(cache_url, headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    })
+                    if resp.status_code == 200:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                            tag.decompose()
+                        article_tag = soup.find("article") or soup.find("main") or soup.find("body")
+                        if article_tag:
+                            text = article_tag.get_text(separator="\n", strip=True)
+                            if len(text.strip()) > 100:
+                                article_text = re.sub(r'\n{3,}', '\n\n', text)
+                                logger.info(f"[ARTICLE] Extracted via Google Cache: {len(article_text)} chars")
+            except Exception as e:
+                logger.warning(f"[ARTICLE] Google Cache failed: {e}")
+
         if not article_text:
             return AgentResult(
                 task_id=task.task_id,
                 agent_name=self.name,
                 success=False,
                 output={},
-                error=f"Could not extract content from {url}. The page may require JavaScript or authentication.",
+                error=f"Could not extract content from {url}. Tried newspaper3k, BeautifulSoup, Jina Reader, and Google Cache.",
             )
 
         # Trim very long articles
