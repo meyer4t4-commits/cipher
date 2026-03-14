@@ -222,19 +222,29 @@ struct InteractionAnswerResponse: Codable {
 // MARK: - Streaming Chunk
 
 struct StreamChunk: Codable {
-    let type: String            // "token", "metadata", "done", "error"
+    let type: String            // "token", "metadata", "done", "error", "image"
     let content: String?
     let conversationId: UUID?
     let modelUsed: String?
     let tokensUsed: Int?
     let costUsd: Double?
+    // Metadata fields for confidence/validation
+    let confidenceScore: Double?
+    let hasImages: Int?
+    // Image chunk fields (type == "image")
+    let url: String?
+    let mimeType: String?
+    let analysis: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, content
+        case type, content, url, analysis
         case conversationId = "conversation_id"
         case modelUsed = "model_used"
         case tokensUsed = "tokens_used"
         case costUsd = "cost_usd"
+        case confidenceScore = "confidence_score"
+        case hasImages = "has_images"
+        case mimeType = "mime_type"
     }
 }
 
@@ -245,13 +255,13 @@ struct HealthResponse: Codable {
     let version: String?
     let uptimeSeconds: Double?
     let databaseConnected: Bool?
-    let chromaConnected: Bool?
+    let memoryConnected: Bool?
 
     enum CodingKeys: String, CodingKey {
         case status, version
         case uptimeSeconds = "uptime_seconds"
         case databaseConnected = "database_connected"
-        case chromaConnected = "chroma_connected"
+        case memoryConnected = "memory_connected"
     }
 
     var isHealthy: Bool {

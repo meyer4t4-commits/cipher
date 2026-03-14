@@ -199,6 +199,17 @@ class ChatViewModel {
             // from this point forward, so the user always sees it.
             thinkingStartTime = Date()
 
+            // Convert response images to Attachment objects for display
+            let responseAttachments: [Attachment] = (response.images ?? []).compactMap { img in
+                guard !img.url.isEmpty else { return nil }
+                return Attachment(
+                    fileName: "generated_image.png",
+                    mimeType: img.mimeType ?? "image/png",
+                    fileSize: 0,
+                    localPath: img.url
+                )
+            }
+
             let assistantMessage = Message(
                 conversationId: response.conversationId,
                 content: response.message,
@@ -207,7 +218,10 @@ class ChatViewModel {
                 status: .delivered,
                 modelUsed: response.modelUsed,
                 tokensUsed: response.tokensUsed,
-                costUsd: response.costUsd
+                costUsd: response.costUsd,
+                attachments: responseAttachments,
+                confidenceScore: response.confidenceScore,
+                validationWarnings: response.validationWarnings
             )
 
             currentConversation.id = response.conversationId
@@ -282,6 +296,8 @@ class ChatViewModel {
         var finalTokens: Int?
         var finalCost: Double?
         var finalConversationId: UUID?
+        var finalConfidence: Double?
+        var streamedImages: [Attachment] = []
 
         do {
             for try await chunk in stream {
@@ -299,11 +315,22 @@ class ChatViewModel {
                             currentConversation.messages[messageIndex].content = fullContent
                         }
                     }
+                case "image":
+                    // Backend sends image chunks with url, mimeType, analysis
+                    if let imageUrl = chunk.url, !imageUrl.isEmpty {
+                        streamedImages.append(Attachment(
+                            fileName: "generated_image.png",
+                            mimeType: chunk.mimeType ?? "image/png",
+                            fileSize: 0,
+                            localPath: imageUrl
+                        ))
+                    }
                 case "metadata":
                     finalModel = chunk.modelUsed
                     finalTokens = chunk.tokensUsed
                     finalCost = chunk.costUsd
                     finalConversationId = chunk.conversationId
+                    finalConfidence = chunk.confidenceScore
                 case "done":
                     break
                 case "error":
@@ -320,7 +347,7 @@ class ChatViewModel {
                 : fullContent
             let effectiveStatus: MessageStatus = trimmedContent.isEmpty ? .failed : .delivered
 
-            // Finalize the message
+            // Finalize the message with all metadata including images and confidence
             if messageIndex < currentConversation.messages.count {
                 currentConversation.messages[messageIndex] = Message(
                     id: currentConversation.messages[messageIndex].id,
@@ -331,7 +358,9 @@ class ChatViewModel {
                     status: effectiveStatus,
                     modelUsed: finalModel,
                     tokensUsed: finalTokens,
-                    costUsd: finalCost
+                    costUsd: finalCost,
+                    attachments: streamedImages,
+                    confidenceScore: finalConfidence
                 )
             }
 
