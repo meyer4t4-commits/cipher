@@ -537,22 +537,35 @@ async def process_chat(
             content_agent = ContentExtractorAgent()
 
             # Auto-detect the operation from the URL/message
-            content_params = {"capability": "auto_extract"}
+            content_params = {"operation": "auto_extract"}
             # Try to extract the URL from the message
             url_match = _re_content.search(r'https?://\S+', request.message or "")
             if url_match:
                 content_params["url"] = url_match.group().rstrip(".,;!?)")
-            elif "youtube" in msg_lower:
-                content_params["capability"] = "extract_youtube"
-            elif "twitter" in msg_lower or "x.com" in msg_lower or "tweet" in msg_lower:
-                content_params["capability"] = "extract_tweet"
+
+            # For social media URLs, use deep_extract to follow embedded links
+            _extracted_url = content_params.get("url", "")
+            if any(d in _extracted_url.lower() for d in ["twitter.com", "x.com"]):
+                content_params["operation"] = "deep_extract"
+                logger.info("[CONTENT BYPASS] Twitter/X URL detected — using deep_extract to follow links")
+            elif "youtube" in msg_lower or "youtu.be" in _extracted_url.lower():
+                content_params["operation"] = "extract_youtube"
+
+            # Also check for explicit "deep" or "full" or "article inside" keywords
+            if any(kw in msg_lower for kw in ["deep extract", "follow the link", "article inside",
+                                                "click on", "full article", "what it links to",
+                                                "apply where necessary", "take from this"]):
+                content_params["operation"] = "deep_extract"
+                logger.info("[CONTENT BYPASS] Deep extraction requested via keywords")
 
             logger.info(f"[CONTENT BYPASS] Params: {content_params}")
 
+            _content_timeout = 120 if content_params.get("operation") == "deep_extract" else 60
             content_task = AgentTask(
                 agent_name="content_extractor_agent",
                 instruction=request.message,
                 params=content_params,
+                timeout_seconds=_content_timeout,
             )
             content_result = await content_agent.run(content_task)
             logger.info(f"[CONTENT BYPASS] Agent result: success={content_result.success}, error={content_result.error}")
@@ -572,6 +585,10 @@ async def process_chat(
                         "Present it clearly — include the title, source, and key content. "
                         "If it's a transcript, format it readably. If it's an article, summarize the key points. "
                         "If Mark asked to 'break it down' or 'decipher', provide analysis and key takeaways. "
+                        "If the data includes 'linked_content', that means we followed links from the original post "
+                        "and extracted the full articles — present BOTH the original post context AND the linked articles. "
+                        "If Mark said 'apply where necessary' or 'take from this', extract actionable insights "
+                        "and explain specifically how they could be applied to Cipher's capabilities. "
                         "This is REAL DATA extracted from the actual source, not fabricated."
                     )},
                     {"role": "user", "content": (

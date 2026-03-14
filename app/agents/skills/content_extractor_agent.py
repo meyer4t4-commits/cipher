@@ -70,6 +70,17 @@ class ContentExtractorAgent(BaseAgent):
                     category="data",
                     timeout_seconds=90,
                 ),
+                AgentCapability(
+                    name="deep_extract",
+                    description=(
+                        "Deep extraction: extract content from a URL, find all embedded links, "
+                        "follow them, and extract their content too. Returns the original content "
+                        "plus all linked article content. Use this for tweets/posts that contain "
+                        "links to articles, blog posts, or other content."
+                    ),
+                    category="data",
+                    timeout_seconds=120,
+                ),
             ],
         )
 
@@ -128,6 +139,8 @@ class ContentExtractorAgent(BaseAgent):
                 return await self._extract_tweet(url, task)
             elif operation == "extract_article":
                 return await self._extract_article(url, task)
+            elif operation == "deep_extract":
+                return await self._deep_extract(url, task)
             elif operation == "transcribe_video":
                 return await self._transcribe_video(url, task)
             else:
@@ -455,12 +468,23 @@ class ContentExtractorAgent(BaseAgent):
                 ),
             )
 
+        # Extract all URLs from the tweet text so downstream can follow them
+        embedded_urls = re.findall(r'https?://\S+', tweet_text)
+        # Clean trailing punctuation from URLs
+        embedded_urls = [u.rstrip('.,;:!?)"\'>') for u in embedded_urls]
+        # Filter out twitter/x.com self-references
+        embedded_urls = [
+            u for u in embedded_urls
+            if not any(d in u.lower() for d in ["twitter.com", "x.com", "t.co/"])
+        ]
+
         output = {
             "content": tweet_text,
             "source_url": url,
             "source_type": "twitter",
             "tweet_id": tweet_id,
             "metadata": tweet_metadata,
+            "embedded_urls": embedded_urls,
             "word_count": len(tweet_text.split()),
             "extracted_at": datetime.utcnow().isoformat(),
             "extraction_method": "oembed" if tweet_metadata.get("author_name") else "scrape",
@@ -472,6 +496,118 @@ class ContentExtractorAgent(BaseAgent):
             success=True,
             output=output,
         )
+
+    # ── Deep Extraction (follow links) ─────────────────────────────
+
+    async def _deep_extract(self, url: str, task: AgentTask) -> AgentResult:
+        """
+        Deep extraction: extract content from a URL, find embedded links,
+        follow each one, and return all content combined.
+
+        This is the key capability for tweets that link to articles.
+        Flow: extract tweet → find URLs → extract each article → combine.
+        """
+        await self.emit_progress(f"Deep extracting from {url}...")
+
+        # Step 1: Extract the source content
+        url_type = self._detect_url_type(url)
+        if url_type == "youtube":
+            source_result = await self._extract_youtube(url, task)
+        elif url_type == "twitter":
+            source_result = await self._extract_tweet(url, task)
+        else:
+            source_result = await self._extract_article(url, task)
+
+        if not source_result.success:
+            return source_result
+
+        source_output = source_result.output if isinstance(source_result.output, dict) else {}
+        source_content = source_output.get("content", "")
+
+        # Step 2: Find all embedded URLs (from output + raw text scan)
+        embedded_urls = source_output.get("embedded_urls", [])
+
+        # Also scan the content text for any URLs we might have missed
+        content_urls = re.findall(r'https?://\S+', source_content)
+        content_urls = [u.rstrip('.,;:!?)"\'>') for u in content_urls]
+
+        # Combine and deduplicate, filter out self-references
+        all_urls = list(dict.fromkeys(embedded_urls + content_urls))  # preserve order, dedupe
+        all_urls = [
+            u for u in all_urls
+            if not any(d in u.lower() for d in ["twitter.com", "x.com"])
+            and u != url  # Don't re-extract the source
+        ]
+
+        # Step 3: Follow each URL and extract content
+        linked_content = []
+        for i, link_url in enumerate(all_urls[:5]):  # Max 5 links to stay within timeout
+            await self.emit_progress(f"Following link {i+1}/{min(len(all_urls), 5)}: {link_url[:60]}...")
+            try:
+                # Resolve t.co and other redirects first
+                resolved_url = await self._resolve_redirects(link_url)
+                link_type = self._detect_url_type(resolved_url)
+
+                if link_type == "youtube":
+                    link_result = await self._extract_youtube(resolved_url, task)
+                else:
+                    link_result = await self._extract_article(resolved_url, task)
+
+                if link_result.success:
+                    link_output = link_result.output if isinstance(link_result.output, dict) else {}
+                    linked_content.append({
+                        "url": resolved_url,
+                        "original_url": link_url,
+                        "type": link_type,
+                        "title": link_output.get("metadata", {}).get("title", ""),
+                        "content": link_output.get("content", "")[:10000],  # Cap per article
+                        "word_count": link_output.get("word_count", 0),
+                    })
+                else:
+                    linked_content.append({
+                        "url": resolved_url,
+                        "original_url": link_url,
+                        "type": link_type,
+                        "error": link_result.error or "Extraction failed",
+                    })
+            except Exception as e:
+                linked_content.append({
+                    "url": link_url,
+                    "original_url": link_url,
+                    "error": f"{type(e).__name__}: {str(e)[:200]}",
+                })
+
+        # Step 4: Combine everything
+        combined_output = {
+            "source": source_output,
+            "linked_content": linked_content,
+            "total_links_found": len(all_urls),
+            "total_links_followed": len(linked_content),
+            "source_type": url_type,
+            "deep_extract": True,
+            "content": source_content,  # Keep top-level content for compatibility
+            "word_count": (
+                source_output.get("word_count", 0)
+                + sum(lc.get("word_count", 0) for lc in linked_content)
+            ),
+            "extracted_at": datetime.utcnow().isoformat(),
+        }
+
+        return AgentResult(
+            task_id=task.task_id,
+            agent_name=self.name,
+            success=True,
+            output=combined_output,
+        )
+
+    async def _resolve_redirects(self, url: str) -> str:
+        """Follow redirects (especially t.co shortlinks) to get the final URL."""
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                resp = await client.head(url, headers={"User-Agent": "Mozilla/5.0"})
+                return str(resp.url)
+        except Exception:
+            return url  # Return original if redirect fails
 
     # ── Article Extraction ──────────────────────────────────────────
 

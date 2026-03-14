@@ -251,10 +251,19 @@ Step 2: Does this need domain expertise or an API integration?
     - "break down this video/article" → delegate_to_agent("content_extractor_agent")
     - "what does this video/tweet say" → delegate_to_agent("content_extractor_agent")
     - ANY YouTube URL (youtube.com, youtu.be) → delegate_to_agent("content_extractor_agent")
-    - ANY Twitter/X URL (twitter.com, x.com) → delegate_to_agent("content_extractor_agent")
+    - ANY Twitter/X URL (twitter.com, x.com) → delegate_to_agent("content_extractor_agent", params={"operation": "deep_extract"})
     - "pull the transcript" → delegate_to_agent("content_extractor_agent")
     - "decipher this [video/article/tweet]" → delegate_to_agent("content_extractor_agent")
     - "summarize this [video/article]" → delegate_to_agent("content_extractor_agent")
+    - "take from this and apply" → delegate_to_agent("content_extractor_agent", params={"operation": "deep_extract"})
+    - "click on the article inside" → delegate_to_agent("content_extractor_agent", params={"operation": "deep_extract"})
+
+    DEEP EXTRACTION — For tweets/posts that contain links to articles:
+    - content_extractor_agent has a "deep_extract" operation that follows embedded links
+    - It extracts the tweet → finds all URLs → follows each → extracts the full article
+    - ALWAYS use deep_extract for Twitter/X URLs — tweets almost always link to real content
+    - If Mark says "take from this and apply" or "apply where necessary", use deep_extract
+      THEN analyze the linked content for actionable insights applicable to Cipher
 
   AD GENERATION & CREATIVE CAMPAIGNS:
     - "generate ads" → delegate_to_agent("ad_pipeline_agent")
