@@ -898,10 +898,13 @@ async def process_chat(
 
             logger.info(f"[SELF-IMPROVE BYPASS] Params: {si_params}")
 
+            # Self-improvement tasks need more time — 32 agents to check, LLM calls, etc.
+            _si_timeout = 300 if si_params.get("capability") in ("benchmark", "improve") else 120
             si_task = _SITask(
                 agent_name="self_improvement_agent",
                 instruction=request.message,
                 params=si_params,
+                timeout_seconds=_si_timeout,
             )
             si_result = await si_agent.run(si_task)
             logger.info(f"[SELF-IMPROVE BYPASS] Result: success={si_result.success}")
