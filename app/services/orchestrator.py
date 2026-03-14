@@ -731,6 +731,123 @@ async def process_chat(
             import traceback
             logger.error(f"[SELF-TRAIN BYPASS] Traceback: {traceback.format_exc()}")
 
+    # ═══════════════════════════════════════════════════════════════════
+    # AD PIPELINE BYPASS — when Mark asks to generate ads, create ad
+    # campaigns, or build ad creatives, route directly to ad_pipeline_agent.
+    # This chains: brand research → ad copy → image generation.
+    # ═══════════════════════════════════════════════════════════════════
+    _ad_keywords = [
+        "generate ads", "create ads", "make ads", "ad campaign", "ad creative",
+        "ad creatives", "generate ad set", "create an ad", "make an ad",
+        "ad pipeline", "run the ad pipeline", "batch ads", "ad images",
+        "generate advertisements", "create advertisements", "ad generation",
+        "make me some ads", "create some ads", "ad for my", "ads for my",
+        "ad set for", "ad campaign for", "generate images for ads",
+        "ad prompts", "create ad prompts", "automated ads", "automate ads",
+    ]
+    if any(kw in msg_lower for kw in _ad_keywords):
+        logger.info("[AD PIPELINE BYPASS] Detected ad generation request — calling ad_pipeline_agent directly")
+        try:
+            from app.agents.skills.ad_pipeline_agent import AdPipelineAgent
+            from app.agents.models import AgentTask as _AdTask
+
+            ad_agent = AdPipelineAgent()
+
+            # Extract brand URL if present
+            import re as _re_ad
+            _ad_url_match = _re_ad.search(r'https?://\S+', request.message or "")
+            _brand_url = _ad_url_match.group().rstrip(".,;!?)") if _ad_url_match else ""
+
+            # Look for known brand references
+            if not _brand_url and "tallowroots" in msg_lower:
+                _brand_url = "https://tallowroots.com"
+
+            ad_params = {
+                "capability": "generate_ad_set",
+                "brand_url": _brand_url,
+                "brand_description": request.message,
+                "num_ads": 5,
+                "ad_platforms": ["instagram", "facebook"],
+            }
+
+            # Check for number of ads requested
+            _num_match = _re_ad.search(r'(\d+)\s*(?:ads?|creatives?|images?)', msg_lower)
+            if _num_match:
+                ad_params["num_ads"] = min(int(_num_match.group(1)), 20)
+
+            # Check if they just want prompts (no images)
+            if "prompt" in msg_lower and "image" not in msg_lower:
+                ad_params["capability"] = "generate_ad_prompts"
+                ad_params["num_ads"] = min(ad_params.get("num_ads", 10), 40)
+
+            logger.info(f"[AD PIPELINE BYPASS] Params: {ad_params}")
+
+            ad_task = _AdTask(
+                agent_name="ad_pipeline_agent",
+                instruction=request.message,
+                params=ad_params,
+            )
+            ad_result = await ad_agent.run(ad_task)
+            logger.info(f"[AD PIPELINE BYPASS] Agent result: success={ad_result.success}")
+
+            if ad_result.success and ad_result.output:
+                import json as _json_ad
+                raw_output = _json_ad.dumps(ad_result.output, indent=2, default=str)[:12000]
+
+                format_messages = [
+                    {"role": "system", "content": (
+                        "You are Cipher. You just ran the ad pipeline agent and generated real ad creatives. "
+                        "Present the results clearly: brand profile summary, then each ad with its headline, "
+                        "body copy, CTA, and image status. If images were generated, mention the URLs. "
+                        "Keep it concise and action-oriented. This is REAL output, not mockup."
+                    )},
+                    {"role": "user", "content": (
+                        f"Mark asked: {request.message}\n\n"
+                        f"Ad pipeline output:\n{raw_output}"
+                    )},
+                ]
+                format_result = await chat_completion(
+                    messages=format_messages,
+                    model_tier=model_tier,
+                    max_tokens=4096,
+                    temperature=0.3,
+                )
+                formatted_msg = ""
+                if format_result and isinstance(format_result, dict):
+                    formatted_msg = format_result.get("content", "")
+                if not formatted_msg:
+                    formatted_msg = f"Generated {ad_result.output.get('num_ads_generated', 0)} ads. Pipeline complete."
+
+                # Collect any generated image URLs for response
+                response_images = []
+                for ad in ad_result.output.get("ads", []):
+                    if ad.get("image_url"):
+                        response_images.append(ImageAttachment(
+                            url=ad["image_url"],
+                            mime_type="image/png",
+                            analysis=f"{ad.get('headline', 'Ad image')} — {ad.get('platform', 'social')}",
+                        ))
+
+                return ChatResponse(
+                    message=formatted_msg,
+                    conversation_id=conversation_id,
+                    model_used=format_result.get("model_used", "") if isinstance(format_result, dict) else "unknown",
+                    tokens_used=format_result.get("total_tokens", 0) if isinstance(format_result, dict) else 0,
+                    cost_usd=format_result.get("cost_usd", 0.0) if isinstance(format_result, dict) else 0.0,
+                    images=response_images if response_images else None,
+                )
+            else:
+                logger.error(f"[AD PIPELINE BYPASS] Agent failed: {ad_result.error}")
+                live_data_context += (
+                    f"\n\n[AD PIPELINE ERROR]\n"
+                    f"The ad pipeline agent failed: {ad_result.error}\n"
+                    f"Tell the user what went wrong and suggest they provide a brand URL.\n"
+                )
+        except Exception as e:
+            logger.error(f"[AD PIPELINE BYPASS] Exception: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[AD PIPELINE BYPASS] Traceback: {traceback.format_exc()}")
+
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:
         cached = get_cached_response(
@@ -912,6 +1029,10 @@ async def process_chat(
                           "cpu usage", "memory usage", "check if site is up"],
         "scheduler_agent": ["schedule a task", "set up a cron", "recurring task", "schedule daily",
                             "schedule weekly", "automate this"],
+        "ad_pipeline_agent": ["generate ads", "create ads", "make ads", "ad campaign", "ad creative",
+                              "ad pipeline", "run ad pipeline", "batch ads", "automated ads",
+                              "ad set for", "create ad set", "generate ad set", "ad images",
+                              "generate advertisements", "create advertisements"],
         "content_extractor_agent": ["extract from youtube", "youtube transcript", "transcribe this video",
                                      "transcribe video", "extract from twitter", "extract tweet",
                                      "pull from this url", "extract article", "break down this video",
