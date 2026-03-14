@@ -204,10 +204,19 @@ class SelfImprovementAgent(BaseAgent):
             verified=False,
         )
 
-    async def verify(self, result: dict[str, Any]) -> bool:
+    async def verify(self, result) -> bool:
         if not result:
             return False
-        return result.get("status") in ("completed", "partial", "audit_complete", "benchmark_complete")
+        # result is an AgentResult — check the output dict inside it
+        if isinstance(result, AgentResult):
+            output = result.output
+            if isinstance(output, dict):
+                return output.get("status") in ("completed", "partial", "audit_complete", "benchmark_complete")
+            return result.success
+        # Fallback for raw dict
+        if isinstance(result, dict):
+            return result.get("status") in ("completed", "partial", "audit_complete", "benchmark_complete")
+        return False
 
     # ------------------------------------------------------------------
     # AUDIT — Targeted subsystem inspection
