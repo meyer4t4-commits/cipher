@@ -46,8 +46,8 @@ MAX_FILE_CHARS = 6000
 AUDITABLE_SUBSYSTEMS = {
     "memory": {
         "files": ["app/services/memory.py"],
-        "test_cmd": "python -c \"from app.services.memory import recall_memories; print('memory OK')\"",
-        "description": "ChromaDB memory storage and retrieval",
+        "test_cmd": "python -c \"from app.services.memory import recall_memories, store_memory, store_conversation_context, store_agent_result, store_learning, get_memory_stats, initialize_memory, delete_memory; print('memory OK — all 8 functions imported')\"",
+        "description": "PostgreSQL-backed persistent memory. Functions: store_memory, recall_memories, store_conversation_context, store_agent_result, store_learning, get_memory_stats, delete_memory, initialize_memory. Uses MemoryEntry table. Has importance scoring (_score_importance), recency-weighted retrieval (_relevance_score), and priority boosting.",
     },
     "orchestrator": {
         "files": ["app/services/orchestrator.py"],
@@ -308,7 +308,13 @@ class SelfImprovementAgent(BaseAgent):
         messages = [
             {"role": "system", "content": (
                 "You are a code auditor. Analyze the code below for SPECIFIC, FIXABLE issues.\n\n"
-                "For each issue found, output a JSON object with:\n"
+                "CRITICAL RULES:\n"
+                "1. READ THE ACTUAL CODE before reporting. If a function exists in the code, do NOT report it as missing.\n"
+                "2. The subsystem description lists what functions and features ALREADY EXIST. Do not report those as missing.\n"
+                "3. Only report bugs you can point to with a specific line/function.\n"
+                "4. Do NOT suggest adding features that already exist in the code.\n"
+                "5. Do NOT report things as bugs just because they don't match your expectations — read what the code actually does.\n\n"
+                "For each REAL issue found, output a JSON object with:\n"
                 "- type: bug|performance|missing_feature|dead_code|security|config\n"
                 "- severity: critical|high|medium|low\n"
                 "- file: which file\n"
@@ -317,17 +323,18 @@ class SelfImprovementAgent(BaseAgent):
                 "- fix: exact code change needed (old → new)\n\n"
                 "Output ONLY a JSON array. No explanations. No essays.\n"
                 "If no issues found, output: []\n"
-                "Focus on REAL bugs and missing functionality, not style nits."
+                "PREFER returning [] over false positives. Only report issues you are CERTAIN about."
             )},
             {"role": "user", "content": (
-                f"Subsystem: {name} — {info['description']}\n"
+                f"Subsystem: {name}\n"
+                f"Description (these features ALREADY EXIST): {info['description']}\n"
                 f"Quick check passed: {quick_check.get('passed', False)}\n\n"
                 f"Code:\n{files_text}"
             )},
         ]
 
         result = await chat_completion(
-            messages=messages, model_tier="fast", max_tokens=2000, temperature=0.2,
+            messages=messages, model_tier="default", max_tokens=2000, temperature=0.1,
         )
 
         issues = []
