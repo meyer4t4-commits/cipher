@@ -80,13 +80,12 @@ async def attempt_fix(issue: str = "all"):
 
 @router.get("/errors")
 async def get_error_history():
-    """Get error tracking history — all errors, patterns, and fix rates."""
+    """Get error tracking history — in-memory + persistent JSONL, patterns, and fix rates."""
     try:
-        from app.services.self_healing import get_error_tracker
-        tracker = get_error_tracker()
-        return tracker.get_error_summary()
+        from app.services.self_healing import get_error_stats
+        return get_error_stats()
     except Exception as e:
-        return {"error": str(e), "total_unique_errors": 0}
+        return {"error": str(e), "in_memory": {"unique_errors": 0}}
 
 
 @router.get("/self-healing")

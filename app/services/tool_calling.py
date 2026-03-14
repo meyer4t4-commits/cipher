@@ -591,6 +591,11 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
     except Exception as e:
         logger.error(f"Tool execution failed: {tool_name}: {e}")
+        try:
+            from app.services.self_healing import capture_error
+            capture_error("tool_failure", f"tool:{tool_name}", e, {"args_keys": list(args.keys()) if args else []})
+        except Exception:
+            pass
         return json.dumps({"error": str(e), "tool": tool_name})
 
 

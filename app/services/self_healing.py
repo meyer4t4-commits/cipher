@@ -473,3 +473,108 @@ _healing_loop = SelfHealingLoop()
 
 def get_healing_loop() -> SelfHealingLoop:
     return _healing_loop
+
+
+# ---------------------------------------------------------------------------
+# Quick-capture helpers — call from orchestrator, tool_calling, etc.
+# These are lightweight wrappers so callers don't need to import the full loop.
+# ---------------------------------------------------------------------------
+
+_ERROR_LOG_PATH = Path("/tmp/cipher_data/error_history.jsonl")
+
+
+def capture_error(
+    error_type: str,
+    source: str,
+    error: Exception,
+    context: dict = None,
+) -> dict:
+    """
+    Capture an error from anywhere in the system — logs to in-memory tracker,
+    persists to DB, and appends to JSONL file for offline analysis.
+
+    Args:
+        error_type: Category — "orchestrator", "tool_failure", "agent_crash",
+                    "import_error", "bypass_error", "llm_error"
+        source: Where it happened — "orchestrator.shopify_bypass", "tool:brave_search", etc.
+        error: The exception object
+        context: Optional dict with extra context (request message, agent name, etc.)
+
+    Returns:
+        The error entry dict with fingerprint for tracking.
+    """
+    tb = traceback.format_exception(type(error), error, error.__traceback__)
+    stack_str = "".join(tb)
+
+    # Record in the in-memory tracker (also persists to DB via ErrorLog)
+    tracker = get_error_tracker()
+    entry = tracker.record_error(
+        error_type=error_type,
+        source=source,
+        message=str(error),
+        stack_trace=stack_str,
+        context=context or {},
+    )
+
+    # Also append to JSONL file for durable local history
+    _append_error_jsonl(entry)
+
+    logger.warning(f"[ERROR-CAPTURE] {error_type} in {source}: {str(error)[:200]}")
+    return entry
+
+
+def _append_error_jsonl(entry: dict):
+    """Append an error entry to the JSONL file (best-effort, never crashes)."""
+    try:
+        _ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ERROR_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+    except Exception:
+        pass  # Never let logging break the app
+
+
+def get_error_history(limit: int = 50) -> list[dict]:
+    """Read recent errors from the JSONL file."""
+    try:
+        if not _ERROR_LOG_PATH.exists():
+            return []
+        lines = _ERROR_LOG_PATH.read_text().strip().split("\n")
+        entries = []
+        for line in lines[-limit:]:
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return entries
+    except Exception:
+        return []
+
+
+def get_error_stats() -> dict:
+    """Get a summary of error history for the diagnostics endpoint."""
+    tracker = get_error_tracker()
+    summary = tracker.get_error_summary()
+
+    # Also count JSONL entries for cross-session visibility
+    jsonl_count = 0
+    try:
+        if _ERROR_LOG_PATH.exists():
+            jsonl_count = sum(1 for _ in open(_ERROR_LOG_PATH))
+    except Exception:
+        pass
+
+    return {
+        "in_memory": {
+            "unique_errors": summary["total_unique_errors"],
+            "total_occurrences": summary["total_occurrences"],
+            "fix_success_rate": summary["fix_success_rate"],
+            "recurring": summary["recurring_errors"],
+            "unfixed": summary["unfixed_errors"],
+        },
+        "persistent": {
+            "jsonl_entries": jsonl_count,
+            "jsonl_path": str(_ERROR_LOG_PATH),
+        },
+        "recent": summary["recent_errors"][-5:],
+        "top_sources": summary["top_error_sources"],
+    }

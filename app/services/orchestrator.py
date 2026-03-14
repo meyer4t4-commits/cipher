@@ -27,6 +27,7 @@ from app.services.voice_personalities import get_personality_manager
 from app.services.tool_calling import CIPHER_TOOLS, execute_tool
 from app.services.vision_service import analyze_images, build_vision_messages
 from app.services.fact_checker import validate_response
+from app.services.self_healing import capture_error
 from app.agents.models import AgentSignal, RiskLevel, SignalDirection
 
 # Import the comprehensive system prompt from the dedicated module
@@ -538,6 +539,7 @@ async def process_chat(
             logger.error(f"[SHOPIFY BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[SHOPIFY BYPASS] Traceback: {traceback.format_exc()}")
+            capture_error("bypass_error", "orchestrator.shopify_bypass", e, {"message": request.message[:300]})
 
     # ═══════════════════════════════════════════════════════════════════
     # CONTENT EXTRACTION HARD BYPASS — skip LLM routing for URL extraction
@@ -689,6 +691,7 @@ async def process_chat(
             logger.error(f"[CONTENT BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[CONTENT BYPASS] Traceback: {traceback.format_exc()}")
+            capture_error("bypass_error", "orchestrator.content_bypass", e, {"message": request.message[:300]})
 
     # ═══════════════════════════════════════════════════════════════════
     # SELF-TRAINING BYPASS — when Mark says "train yourself" or "improve
@@ -794,6 +797,7 @@ async def process_chat(
             logger.error(f"[SELF-TRAIN BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[SELF-TRAIN BYPASS] Traceback: {traceback.format_exc()}")
+            capture_error("bypass_error", "orchestrator.self_train_bypass", e, {"message": request.message[:300]})
 
     # ═══════════════════════════════════════════════════════════════════
     # AD PIPELINE BYPASS — when Mark asks to generate ads, create ad
@@ -913,6 +917,7 @@ async def process_chat(
             logger.error(f"[AD PIPELINE BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[AD PIPELINE BYPASS] Traceback: {traceback.format_exc()}")
+            capture_error("bypass_error", "orchestrator.ad_pipeline_bypass", e, {"message": request.message[:300]})
 
     # ═══════════════════════════════════════════════════════════════════
     # SELF-IMPROVEMENT BYPASS — when Mark says "fix yourself", "audit
@@ -1042,6 +1047,7 @@ async def process_chat(
             logger.error(f"[SELF-IMPROVE BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[SELF-IMPROVE BYPASS] Traceback: {traceback.format_exc()}")
+            capture_error("bypass_error", "orchestrator.self_improve_bypass", e, {"message": request.message[:300]})
 
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:

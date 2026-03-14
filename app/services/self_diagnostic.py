@@ -142,22 +142,24 @@ async def _check_database() -> dict:
 
 
 async def _check_memory() -> dict:
-    """Check ChromaDB vector memory."""
+    """Check PostgreSQL-backed memory system."""
     try:
         from app.services.memory import get_memory_stats, recall_memories
 
         stats = get_memory_stats()
+        total = stats.get("total_memories", stats.get("total_documents", 0))
+        storage = stats.get("storage", "unknown")
         # Quick test recall
         test = recall_memories("test query", n_results=1)
 
         return {
-            "name": "Memory (ChromaDB)",
+            "name": "Memory (PostgreSQL)",
             "status": "pass",
-            "detail": f"Connected, {stats.get('total_documents', 0)} documents stored",
+            "detail": f"Connected via {storage}, {total} memories stored",
         }
     except Exception as e:
         return {
-            "name": "Memory (ChromaDB)",
+            "name": "Memory (PostgreSQL)",
             "status": "warning",
             "detail": f"Memory unavailable: {str(e)[:200]}. Chat still works without memory.",
         }
@@ -201,7 +203,7 @@ async def _check_llm_routing() -> dict:
 
 
 async def _check_agent_registry() -> dict:
-    """Verify agent registry and count registered agents."""
+    """Verify agent registry, force-load if needed, and run per-agent health checks."""
     try:
         from app.agents.registry import get_registry
 
@@ -209,27 +211,122 @@ async def _check_agent_registry() -> dict:
         agents = registry.list_agents() if hasattr(registry, 'list_agents') else []
         count = len(agents) if agents else 0
 
+        # If no agents registered, force the lazy-load so we get real data
         if count == 0:
-            return {
-                "name": "Agent Registry",
-                "status": "warning",
-                "detail": "No agents registered. Agents lazy-load on first use.",
-            }
+            try:
+                from app.api.agents import _init_agents
+                _init_agents()
+                agents = registry.list_agents()
+                count = len(agents)
+            except Exception as init_err:
+                return {
+                    "name": "Agent Registry",
+                    "status": "error",
+                    "detail": f"Agent initialization failed: {str(init_err)[:200]}",
+                }
 
-        # registry.list_agents() returns strings, not objects
-        agent_names = list(agents) if agents else []
+        # Run per-agent health checks
+        health_results = await check_agent_health(registry)
+
+        healthy = sum(1 for r in health_results if r["status"] == "healthy")
+        degraded = sum(1 for r in health_results if r["status"] == "degraded")
+        broken = sum(1 for r in health_results if r["status"] == "broken")
+
+        status = "pass"
+        if broken > 0:
+            status = "error"
+        elif degraded > 0:
+            status = "warning"
+
         return {
             "name": "Agent Registry",
-            "status": "pass",
-            "detail": f"{count} agents registered",
-            "agents": agent_names[:10],  # First 10
+            "status": status,
+            "detail": f"{count} agents registered — {healthy} healthy, {degraded} degraded, {broken} broken",
+            "agents_total": count,
+            "agents_healthy": healthy,
+            "agents_degraded": degraded,
+            "agents_broken": broken,
+            "agent_health": health_results,
         }
     except Exception as e:
         return {
             "name": "Agent Registry",
             "status": "warning",
-            "detail": f"Registry check failed: {str(e)[:200]}. Agents may lazy-load.",
+            "detail": f"Registry check failed: {str(e)[:200]}",
         }
+
+
+async def check_agent_health(registry=None) -> list[dict]:
+    """
+    Run per-agent health checks: verify each agent initializes, has capabilities,
+    and has required API keys available.
+
+    Returns a list of {name, status, capabilities, missing_keys, detail} dicts.
+    """
+    if registry is None:
+        from app.agents.registry import get_registry
+        registry = get_registry()
+
+    # Map of agent names to the env vars they need
+    AGENT_API_REQUIREMENTS = {
+        "brave_search": ["BRAVE_SEARCH_API_KEY"],
+        "image": ["STABILITY_API_KEY"],
+        "video": ["STABILITY_API_KEY"],
+        "trading": ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"],
+        "communication": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
+        "deploy": ["RAILWAY_API_TOKEN"],
+        "scout": ["ATTOM_API_KEY"],
+        "analyst": ["ATTOM_API_KEY"],
+        "neighborhood_growth": ["ATTOM_API_KEY"],
+        "deal_flow": ["ATTOM_API_KEY"],
+        "market_pulse": ["ATTOM_API_KEY"],
+        "profitability_analyst": ["ATTOM_API_KEY"],
+        "outreach": ["TWILIO_ACCOUNT_SID"],
+        "provisioning": ["SHOPIFY_ACCESS_TOKEN"],
+    }
+
+    results = []
+    agents = registry.list_agents() if hasattr(registry, 'list_agents') else []
+
+    for agent_name in agents:
+        agent = registry.get_agent(agent_name)
+        if agent is None:
+            results.append({
+                "name": agent_name,
+                "status": "broken",
+                "capabilities": 0,
+                "missing_keys": [],
+                "detail": "Agent registered but instance is None",
+            })
+            continue
+
+        # Check capabilities
+        cap_count = len(agent.capabilities) if hasattr(agent, 'capabilities') else 0
+
+        # Check required API keys
+        required_keys = AGENT_API_REQUIREMENTS.get(agent_name, [])
+        missing_keys = [k for k in required_keys if not os.getenv(k, "")]
+
+        # Determine status
+        if cap_count == 0:
+            status = "broken"
+            detail = "No capabilities defined"
+        elif missing_keys:
+            status = "degraded"
+            detail = f"Missing API keys: {', '.join(missing_keys)}"
+        else:
+            status = "healthy"
+            detail = f"{cap_count} capabilities, all dependencies met"
+
+        results.append({
+            "name": agent_name,
+            "status": status,
+            "capabilities": cap_count,
+            "missing_keys": missing_keys,
+            "detail": detail,
+        })
+
+    return results
 
 
 async def _check_cron_registry() -> dict:
