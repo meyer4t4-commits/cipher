@@ -161,7 +161,12 @@ class SelfImprovementAgent(BaseAgent):
         )
         self._project_root = Path(os.getenv("PROJECT_ROOT", ".")).resolve()
         self._log_dir = self._project_root / "data" / "self_improvement"
-        self._log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._log_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self._log_dir = Path("/tmp/cipher_data/self_improvement")
+            self._log_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("[SELF-IMPROVE] Using /tmp fallback for log_dir")
 
     async def validate(self, task: AgentTask) -> bool:
         cap = task.params.get("capability", "improve")
