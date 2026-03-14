@@ -65,6 +65,7 @@ def _init_agents():
         SentinelAgent,
         ShellAgent,
         SkillCreatorAgent,
+        ContentExtractorAgent,
         SynthesisAgent,
         TradingAgent,
         VideoAgent,
@@ -102,6 +103,7 @@ def _init_agents():
         ArchivistAgent(),
         SentinelAgent(),
         SynthesisAgent(),
+        ContentExtractorAgent(),
     ]
 
     for agent in agents:

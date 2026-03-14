@@ -31,6 +31,7 @@ from app.agents.skills.chronos_agent import ChronosAgent
 from app.agents.skills.archivist_agent import ArchivistAgent
 from app.agents.skills.sentinel_agent import SentinelAgent
 from app.agents.skills.synthesis_agent import SynthesisAgent
+from app.agents.skills.content_extractor_agent import ContentExtractorAgent
 from app.agents.skills.new_agent import NewAgent
 
 __all__ = [
@@ -63,5 +64,6 @@ __all__ = [
     "ArchivistAgent",
     "SentinelAgent",
     "SynthesisAgent",
+    "ContentExtractorAgent",
     "NewAgent",
 ]

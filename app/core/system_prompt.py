@@ -237,6 +237,16 @@ Step 2: Does this need domain expertise or an API integration?
     - "provision infrastructure" → delegate_to_agent("provisioning_agent")
     - "security scan/audit" → delegate_to_agent("sentinel_agent")
 
+  CONTENT EXTRACTION & TRANSCRIPTION:
+    - "extract/transcribe YouTube video" → delegate_to_agent("content_extractor_agent")
+    - "break down this video/article" → delegate_to_agent("content_extractor_agent")
+    - "what does this video/tweet say" → delegate_to_agent("content_extractor_agent")
+    - ANY YouTube URL (youtube.com, youtu.be) → delegate_to_agent("content_extractor_agent")
+    - ANY Twitter/X URL (twitter.com, x.com) → delegate_to_agent("content_extractor_agent")
+    - "pull the transcript" → delegate_to_agent("content_extractor_agent")
+    - "decipher this [video/article/tweet]" → delegate_to_agent("content_extractor_agent")
+    - "summarize this [video/article]" → delegate_to_agent("content_extractor_agent")
+
   BUSINESS & DATA:
     - "schedule/remind" → delegate_to_agent("scheduler_agent")
     - "query database" → delegate_to_agent("data_agent")
@@ -269,6 +279,9 @@ ABSOLUTE BAN — BASH/CURL SCRIPTS FOR AGENT TASKS:
 - Deploy → delegate_to_agent("deploy_agent"). NOT a manual git push script.
 - Video generation → delegate_to_agent("video_agent"). NOT curl to Replicate.
 - Voice cloning → use browser tool with elevenlabs actions. NOT API scripts.
+- YouTube transcript → delegate_to_agent("content_extractor_agent"). NOT yt-dlp bash scripts.
+- Twitter/X extraction → delegate_to_agent("content_extractor_agent"). NOT curl to Twitter API.
+- Article extraction → delegate_to_agent("content_extractor_agent"). NOT Python newspaper scripts.
 - If you catch yourself writing "#!/bin/bash" or "import requests" for a task an agent handles — STOP. Use the agent.
 
 VALIDATION GATES — CHECK YOUR WORK:
@@ -405,6 +418,7 @@ ENGINEERING DIVISION (Build & Deploy)
 CREATIVE DIVISION (Content & Media)
   - image_agent (Canvas) — Image generation (DALL-E 3 / Stability AI)
   - video_agent (Director) — Video generation (Replicate / fal.ai)
+  - content_extractor_agent (Decoder) — YouTube transcripts, Twitter/X extraction, article parsing, video transcription
 
 COMMUNICATIONS DIVISION (Outreach & Messaging)
   - communication_agent (Mercury) — Email, SMS, Slack, Telegram

@@ -509,6 +509,108 @@ async def process_chat(
             import traceback
             logger.error(f"[SHOPIFY BYPASS] Traceback: {traceback.format_exc()}")
 
+    # ═══════════════════════════════════════════════════════════════════
+    # CONTENT EXTRACTION HARD BYPASS — skip LLM routing for URL extraction
+    # When Mark sends a YouTube/Twitter/article URL and asks to extract,
+    # transcribe, or break it down, we call content_extractor_agent directly.
+    # ═══════════════════════════════════════════════════════════════════
+    _content_extract_keywords = [
+        "youtube", "youtu.be", "twitter.com", "x.com", "transcript",
+        "transcribe", "extract from", "break down this", "break this down",
+        "summarize this video", "summarize this article", "what does this say",
+        "what is this about", "pull from this", "decipher this",
+    ]
+    # Also detect raw URLs that look like video/article links
+    import re as _re_content
+    _url_pattern = _re_content.search(r'https?://\S+', request.message or "")
+    _has_content_url = bool(_url_pattern) and any(
+        domain in (_url_pattern.group() if _url_pattern else "").lower()
+        for domain in ["youtube.com", "youtu.be", "twitter.com", "x.com", "vimeo.com", "dailymotion.com"]
+    )
+
+    if _has_content_url or any(kw in msg_lower for kw in _content_extract_keywords):
+        logger.info(f"[CONTENT BYPASS] Detected content extraction request — calling content_extractor_agent directly")
+        try:
+            from app.agents.skills.content_extractor_agent import ContentExtractorAgent
+            from app.agents.models import AgentTask
+
+            content_agent = ContentExtractorAgent()
+
+            # Auto-detect the operation from the URL/message
+            content_params = {"capability": "auto_extract"}
+            # Try to extract the URL from the message
+            url_match = _re_content.search(r'https?://\S+', request.message or "")
+            if url_match:
+                content_params["url"] = url_match.group().rstrip(".,;!?)")
+            elif "youtube" in msg_lower:
+                content_params["capability"] = "extract_youtube"
+            elif "twitter" in msg_lower or "x.com" in msg_lower or "tweet" in msg_lower:
+                content_params["capability"] = "extract_tweet"
+
+            logger.info(f"[CONTENT BYPASS] Params: {content_params}")
+
+            content_task = AgentTask(
+                agent_name="content_extractor_agent",
+                instruction=request.message,
+                params=content_params,
+            )
+            content_result = await content_agent.run(content_task)
+            logger.info(f"[CONTENT BYPASS] Agent result: success={content_result.success}, error={content_result.error}")
+
+            if content_result.success and content_result.output:
+                # Let the LLM format the extracted content into a useful response
+                import json as _json_content
+                raw_content = (
+                    _json_content.dumps(content_result.output, indent=2, default=str)[:12000]
+                    if isinstance(content_result.output, dict)
+                    else str(content_result.output)[:12000]
+                )
+                format_messages = [
+                    {"role": "system", "content": (
+                        "You are Cipher. The user asked you to extract/transcribe/analyze content from a URL. "
+                        "Below is the REAL extracted content from the content_extractor_agent. "
+                        "Present it clearly — include the title, source, and key content. "
+                        "If it's a transcript, format it readably. If it's an article, summarize the key points. "
+                        "If Mark asked to 'break it down' or 'decipher', provide analysis and key takeaways. "
+                        "This is REAL DATA extracted from the actual source, not fabricated."
+                    )},
+                    {"role": "user", "content": (
+                        f"User asked: {request.message}\n\n"
+                        f"Extracted content:\n{raw_content}"
+                    )},
+                ]
+                format_result = await chat_completion(
+                    messages=format_messages,
+                    model_tier=model_tier,
+                    max_tokens=4096,
+                    temperature=0.3,
+                )
+                formatted_msg = ""
+                if format_result and isinstance(format_result, dict):
+                    formatted_msg = format_result.get("content", "")
+                if not formatted_msg:
+                    formatted_msg = f"Here's the extracted content:\n\n{raw_content[:4000]}"
+
+                return ChatResponse(
+                    message=formatted_msg,
+                    conversation_id=conversation_id,
+                    model_used=format_result.get("model_used", "") if isinstance(format_result, dict) else "unknown",
+                    tokens_used=format_result.get("total_tokens", 0) if isinstance(format_result, dict) else 0,
+                    cost_usd=format_result.get("cost_usd", 0.0) if isinstance(format_result, dict) else 0.0,
+                )
+            else:
+                # Agent failed — log and let LLM handle gracefully
+                logger.error(f"[CONTENT BYPASS] Agent failed: {content_result.error}")
+                live_data_context += (
+                    f"\n\n[CONTENT EXTRACTION ERROR — DO NOT HALLUCINATE]\n"
+                    f"The content extraction agent failed with: {content_result.error}\n"
+                    f"Tell the user exactly what went wrong. Do NOT pretend to have the content.\n"
+                )
+        except Exception as e:
+            logger.error(f"[CONTENT BYPASS] Exception: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[CONTENT BYPASS] Traceback: {traceback.format_exc()}")
+
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:
         cached = get_cached_response(
@@ -689,6 +791,12 @@ async def process_chat(
                           "cpu usage", "memory usage", "check if site is up"],
         "scheduler_agent": ["schedule a task", "set up a cron", "recurring task", "schedule daily",
                             "schedule weekly", "automate this"],
+        "content_extractor_agent": ["extract from youtube", "youtube transcript", "transcribe this video",
+                                     "transcribe video", "extract from twitter", "extract tweet",
+                                     "pull from this url", "extract article", "break down this video",
+                                     "decipher this video", "decipher this article", "decipher this tweet",
+                                     "what does this video say", "summarize this video", "summarize this article",
+                                     "extract content from", "pull the transcript"],
     }
     if not forced_tool_choice:
         for agent_name, keywords in DELEGATE_KEYWORDS.items():

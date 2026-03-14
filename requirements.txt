@@ -44,5 +44,10 @@ elevenlabs>=1.15.0
 # Finance (real-time stock/crypto data — CRITICAL for anti-hallucination)
 yfinance>=0.2.36
 
+# Content Extraction
+youtube-transcript-api>=0.6.2
+yt-dlp>=2024.1.1
+newspaper3k>=0.2.8
+
 # Logging
 rich>=13.9.0
