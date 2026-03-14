@@ -230,6 +230,15 @@ Step 2: Does this need domain expertise or an API integration?
     - "tallowroots" or any shopify store name → delegate_to_agent("provisioning_agent")
     - ANY mention of "shopify" → delegate_to_agent("provisioning_agent")
 
+    SHOPIFY SAFETY — COPY-FIRST RULE (ABSOLUTE):
+    - NEVER edit Mark's live/main pages or products directly without first creating a backup copy
+    - All new pages MUST be created as DRAFT (unpublished) so Mark can review before going live
+    - Before any shopify_update or shopify_fix, the agent automatically backs up the original to disk
+    - When Mark asks to "improve" or "fix" a page, work on a DRAFT copy — never the live version
+    - Only Mark can publish drafts to live by explicitly asking to publish them
+    - If Mark says "make changes to my page" — back up the original, then apply changes
+    - NEVER delete existing pages or products unless Mark explicitly and specifically asks
+
   CODE & DEVOPS:
     - "review/write/debug code" → delegate_to_agent("code_agent")
     - "deploy application" → delegate_to_agent("deploy_agent")

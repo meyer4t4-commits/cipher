@@ -969,8 +969,29 @@ class ProvisioningAgent(BaseAgent):
             },
         )
 
+    # ── SAFETY: Backup originals before any write ───────────────────
+    async def _backup_resource(self, resource: str, resource_id: str, store: str = "", token: str = "") -> dict:
+        """Read and save a snapshot of a resource BEFORE modifying it.
+        Returns the original data dict (or empty dict on failure)."""
+        endpoint = f"{resource}s/{resource_id}"
+        result = await self._shopify_api("GET", endpoint, store=store, token=token)
+        if result["ok"] and result["data"]:
+            original = result["data"]
+            # Persist backup to disk so it survives restarts
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"backup_{resource}_{resource_id}_{ts}.json"
+            try:
+                (self._data_dir / backup_name).write_text(json.dumps(original, indent=2, default=str))
+                logger.info(f"[SHOPIFY SAFETY] Backed up {resource}/{resource_id} → {backup_name}")
+            except Exception as e:
+                logger.warning(f"[SHOPIFY SAFETY] Backup write failed (non-fatal): {e}")
+            return original
+        logger.warning(f"[SHOPIFY SAFETY] Could not read {resource}/{resource_id} for backup")
+        return {}
+
     async def _shopify_update(self, task: AgentTask) -> AgentResult:
-        """Update a Shopify resource — product, page, blog post, metafield."""
+        """Update a Shopify resource — product, page, blog post, metafield.
+        SAFETY: Always backs up the original resource before overwriting."""
         resource = task.params.get("resource", "")  # "product", "page"
         resource_id = task.params.get("resource_id", "")
         updates = task.params.get("updates", {})
@@ -982,6 +1003,11 @@ class ProvisioningAgent(BaseAgent):
                 task_id=task.task_id, agent_name=self.name, success=False,
                 error="Provide 'resource' (product/page), 'resource_id', and 'updates' dict.",
             )
+
+        # ── SAFETY: Snapshot the original BEFORE writing ──────────
+        original = await self._backup_resource(resource, resource_id, store, token)
+        if not original:
+            logger.warning(f"[SHOPIFY SAFETY] Proceeding without backup for {resource}/{resource_id}")
 
         # Map singular to endpoint
         endpoint = f"{resource}s/{resource_id}"
@@ -1003,6 +1029,7 @@ class ProvisioningAgent(BaseAgent):
                 "resource": resource,
                 "resource_id": resource_id,
                 "updates_applied": list(updates.keys()),
+                "original_backed_up": bool(original),
                 "result": result["data"],
                 "updated_at": datetime.utcnow().isoformat(),
             },
@@ -1118,7 +1145,9 @@ class ProvisioningAgent(BaseAgent):
                 updates["tags"] = pfix["tags"]
 
             if updates:
-                await self.emit_progress(f"Fixing product {pid}...")
+                await self.emit_progress(f"Backing up & fixing product {pid}...")
+                # SAFETY: Backup original product before modifying
+                await self._backup_resource("product", str(pid), store, token)
                 result = await self._shopify_api("PUT", f"products/{pid}", data={"product": updates}, store=store, token=token)
                 if result["ok"]:
                     applied_fixes.append({"type": "product", "id": pid, "fields": list(updates.keys())})
@@ -1137,7 +1166,9 @@ class ProvisioningAgent(BaseAgent):
                 updates["body_html"] = pgfix["body_html"]
 
             if updates:
-                await self.emit_progress(f"Fixing page {pgid}...")
+                await self.emit_progress(f"Backing up & fixing page {pgid}...")
+                # SAFETY: Backup original page before modifying
+                await self._backup_resource("page", str(pgid), store, token)
                 result = await self._shopify_api("PUT", f"pages/{pgid}", data={"page": updates}, store=store, token=token)
                 if result["ok"]:
                     applied_fixes.append({"type": "page", "id": pgid, "fields": list(updates.keys())})
@@ -1150,9 +1181,10 @@ class ProvisioningAgent(BaseAgent):
             body = new_page.get("body_html", "")
             if title and body:
                 await self.emit_progress(f"Creating page: {title}...")
+                # SAFETY: Create as DRAFT (unpublished) — Mark reviews before going live
                 result = await self._shopify_api(
                     "POST", "pages",
-                    data={"page": {"title": title, "body_html": body, "published": True}},
+                    data={"page": {"title": title, "body_html": body, "published": False}},
                     store=store, token=token,
                 )
                 if result["ok"]:
