@@ -591,6 +591,23 @@ async def process_chat(
                 if not formatted_msg:
                     formatted_msg = f"Here's the extracted content:\n\n{raw_content[:4000]}"
 
+                # ── INSIGHT ABSORBER: Learn from extracted content ──
+                # Fire-and-forget — don't block the response
+                try:
+                    import asyncio as _asyncio_absorb
+                    from app.services.insight_absorber import absorb_extracted_content
+                    _extracted_url = content_params.get("url", "")
+                    _asyncio_absorb.create_task(
+                        absorb_extracted_content(
+                            extraction_result=content_result.output,
+                            source_url=_extracted_url,
+                            user_message=request.message,
+                        )
+                    )
+                    logger.info(f"[CONTENT BYPASS] Insight absorber launched for {_extracted_url}")
+                except Exception as _absorb_err:
+                    logger.debug(f"[CONTENT BYPASS] Insight absorber skipped: {_absorb_err}")
+
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -610,6 +627,109 @@ async def process_chat(
             logger.error(f"[CONTENT BYPASS] Exception: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"[CONTENT BYPASS] Traceback: {traceback.format_exc()}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SELF-TRAINING BYPASS — when Mark says "train yourself" or "improve
+    # from this", actually DO it instead of writing an essay about it.
+    # ═══════════════════════════════════════════════════════════════════
+    _train_keywords = [
+        "train yourself", "train on this", "improve yourself", "self-improve",
+        "learn from this", "what can you do with this to train",
+        "what can you do with this information to train",
+        "use this to get better", "apply this to yourself",
+        "absorb this", "internalize this", "build out to get better",
+    ]
+    if any(kw in msg_lower for kw in _train_keywords):
+        logger.info("[SELF-TRAIN BYPASS] Detected self-training request — executing immediately")
+        try:
+            from app.services.insight_absorber import analyze_and_absorb
+            from app.services.memory import recall_memories as _recall_recent
+
+            # Grab recent conversation context to absorb
+            recent = _recall_recent(request.message, n_results=10, collection_name="cipher_memory")
+            combined_content = request.message
+            for mem in recent:
+                if mem.get("relevance", 0) > 0.2:
+                    combined_content += f"\n---\n{mem.get('content', '')}"
+
+            absorb_result = await analyze_and_absorb(
+                extracted_content=combined_content,
+                source_url="conversation",
+                source_type="self_training",
+                user_instruction=request.message,
+            )
+
+            # Also trigger a weakness analysis
+            weakness_summary = ""
+            try:
+                from app.services.self_research import analyze_weaknesses
+                weaknesses = analyze_weaknesses()
+                if weaknesses.get("weaknesses"):
+                    top = weaknesses["weaknesses"][:3]
+                    weakness_summary = "\n\nCurrent weaknesses identified:\n" + "\n".join(
+                        f"- {w.get('category', '')}: {w.get('suggestion', '')}" for w in top
+                    )
+            except Exception:
+                pass
+
+            # Format actual results — not theory, but what we DID
+            insights_count = absorb_result.get("insights_found", 0)
+            actions = absorb_result.get("actions_taken", [])
+
+            action_lines = []
+            for a in actions:
+                action_type = a.get("action", "")
+                insight_text = a.get("insight", "")
+                if action_type == "experiment_proposed":
+                    action_lines.append(f"- Queued experiment: {insight_text}")
+                elif action_type == "research_program_updated":
+                    action_lines.append(f"- Updated research priorities: {insight_text}")
+                elif action_type == "stored_as_reference":
+                    action_lines.append(f"- Stored insight: {insight_text}")
+
+            import json as _json_train
+            format_messages = [
+                {"role": "system", "content": (
+                    "You are Cipher. You just EXECUTED self-improvement actions based on content "
+                    "Mark shared. Report what you ACTUALLY DID — not what you could theoretically do. "
+                    "Be concise, specific, and action-oriented. No essays. No theory. "
+                    "State what was learned, what actions were taken, and what's queued for overnight training."
+                )},
+                {"role": "user", "content": (
+                    f"Mark said: {request.message}\n\n"
+                    f"Insight absorber results:\n"
+                    f"- Insights extracted: {insights_count}\n"
+                    f"- Actions taken:\n" + "\n".join(action_lines) + "\n"
+                    f"\nRaw insights: {_json_train.dumps(absorb_result.get('insights', []), default=str)[:3000]}"
+                    f"{weakness_summary}"
+                )},
+            ]
+            format_result = await chat_completion(
+                messages=format_messages,
+                model_tier=model_tier,
+                max_tokens=2048,
+                temperature=0.3,
+            )
+            formatted_msg = ""
+            if format_result and isinstance(format_result, dict):
+                formatted_msg = format_result.get("content", "")
+            if not formatted_msg:
+                formatted_msg = (
+                    f"Absorbed {insights_count} actionable insights. "
+                    f"Took {len(actions)} actions: " + "; ".join(a.get("action", "") for a in actions)
+                )
+
+            return ChatResponse(
+                message=formatted_msg,
+                conversation_id=conversation_id,
+                model_used=format_result.get("model_used", "") if isinstance(format_result, dict) else "unknown",
+                tokens_used=format_result.get("total_tokens", 0) if isinstance(format_result, dict) else 0,
+                cost_usd=format_result.get("cost_usd", 0.0) if isinstance(format_result, dict) else 0.0,
+            )
+        except Exception as e:
+            logger.error(f"[SELF-TRAIN BYPASS] Exception: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[SELF-TRAIN BYPASS] Traceback: {traceback.format_exc()}")
 
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:
@@ -631,7 +751,8 @@ async def process_chat(
     # 4. Recall relevant memories
     memory_context = ""
     if request.include_memory:
-        memories = recall_memories(request.message, n_results=5)
+        # Dynamic retrieval — get all relevant memories, not an arbitrary cap
+        memories = recall_memories(request.message, n_results=20)
         if memories:
             memory_parts = []
             for mem in memories:
