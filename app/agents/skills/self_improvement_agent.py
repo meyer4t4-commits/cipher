@@ -492,9 +492,11 @@ class SelfImprovementAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def _improve_cycle(self, task: AgentTask) -> dict:
-        """Run a complete improvement cycle: audit → fix → test → next."""
+        """Run a complete improvement cycle: audit → fix → test → next.
+        IMPORTANT: This should only run when Mark explicitly asks for auto-fix.
+        The default orchestrator path routes to audit-only."""
         focus = task.params.get("focus", "all")
-        max_fixes = min(task.params.get("max_fixes", 3), 10)
+        max_fixes = min(task.params.get("max_fixes", 3), 5)  # Hard cap at 5 to limit damage
 
         results = {
             "status": "completed",

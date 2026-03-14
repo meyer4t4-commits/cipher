@@ -942,25 +942,25 @@ async def process_chat(
             si_agent = SelfImprovementAgent()
 
             # Determine which capability to use based on message content
-            si_params = {"capability": "improve", "max_fixes": 3}
+            # DEFAULT IS AUDIT-ONLY — never auto-fix unless Mark explicitly says "improve" or "fix yourself"
+            si_params = {"capability": "audit", "subsystem": "all"}
 
-            # Check for specific subsystem audit requests FIRST (most specific match)
+            # Check for specific subsystem requests
             _subsystem_names = ["memory", "orchestrator", "agents", "self_healing", "routing", "tools", "system_prompt", "diagnostics"]
             _detected_subsystem = None
             for _sub in _subsystem_names:
                 if _sub in msg_lower:
                     _detected_subsystem = _sub
+                    si_params["subsystem"] = _sub
                     break
 
-            if any(kw in msg_lower for kw in ["audit", "diagnose", "health check", "what's broken", "what needs fixing", "check your"]):
-                si_params["capability"] = "audit"
-                si_params["subsystem"] = _detected_subsystem or "all"
-            elif any(kw in msg_lower for kw in ["benchmark", "test your agents", "agent health"]):
+            if any(kw in msg_lower for kw in ["benchmark", "test your agents", "agent health"]):
                 si_params["capability"] = "benchmark"
-            elif _detected_subsystem and any(kw in msg_lower for kw in ["fix", "repair", "improve"]):
-                # "fix memory", "improve routing" etc — audit that subsystem first, then improve
-                si_params["capability"] = "audit"
-                si_params["subsystem"] = _detected_subsystem
+            elif any(kw in msg_lower for kw in ["fix yourself", "improve yourself", "auto-fix", "self-improve", "run improvement cycle"]):
+                # ONLY auto-fix when Mark EXPLICITLY asks for it
+                si_params["capability"] = "improve"
+                si_params["max_fixes"] = 3
+            # Everything else stays as audit (audit, diagnose, check, fix memory, etc.)
 
             logger.info(f"[SELF-IMPROVE BYPASS] Params: {si_params}")
 
