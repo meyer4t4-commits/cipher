@@ -67,6 +67,7 @@ def _init_agents():
         SkillCreatorAgent,
         ContentExtractorAgent,
         AdPipelineAgent,
+        SelfImprovementAgent,
         SynthesisAgent,
         TradingAgent,
         VideoAgent,
@@ -106,6 +107,7 @@ def _init_agents():
         SynthesisAgent(),
         ContentExtractorAgent(),
         AdPipelineAgent(),
+        SelfImprovementAgent(),
     ]
 
     for agent in agents:

@@ -848,6 +848,107 @@ async def process_chat(
             import traceback
             logger.error(f"[AD PIPELINE BYPASS] Traceback: {traceback.format_exc()}")
 
+    # ═══════════════════════════════════════════════════════════════════
+    # SELF-IMPROVEMENT BYPASS — when Mark says "fix yourself", "audit
+    # your systems", "improve yourself", "run self-improvement", etc.,
+    # route directly to self_improvement_agent instead of writing essays.
+    # ═══════════════════════════════════════════════════════════════════
+    _self_improve_keywords = [
+        "fix yourself", "improve yourself", "audit yourself", "audit your systems",
+        "self-improve", "self improve", "run self-improvement", "self-audit",
+        "check your health", "diagnose yourself", "fix your issues",
+        "update yourself", "upgrade yourself", "run maintenance",
+        "what needs fixing", "what's broken", "benchmark your agents",
+        "test your agents", "agent health check", "run a health check",
+        "start updating", "lets start updating", "let's start updating",
+        "fix what's wrong", "repair yourself", "self-maintenance",
+    ]
+    if any(kw in msg_lower for kw in _self_improve_keywords):
+        logger.info("[SELF-IMPROVE BYPASS] Detected self-improvement request — calling self_improvement_agent")
+        try:
+            from app.agents.skills.self_improvement_agent import SelfImprovementAgent
+            from app.agents.models import AgentTask as _SITask
+
+            si_agent = SelfImprovementAgent()
+
+            # Determine which capability to use
+            si_params = {"capability": "improve", "max_fixes": 3}
+
+            if any(kw in msg_lower for kw in ["audit", "diagnose", "health check", "what's broken", "what needs fixing"]):
+                si_params["capability"] = "audit"
+                si_params["subsystem"] = "all"
+            elif any(kw in msg_lower for kw in ["benchmark", "test your agents", "agent health"]):
+                si_params["capability"] = "benchmark"
+            elif any(kw in msg_lower for kw in ["memory", "recall", "remember"]):
+                si_params["capability"] = "audit"
+                si_params["subsystem"] = "memory"
+            elif any(kw in msg_lower for kw in ["routing", "model", "llm"]):
+                si_params["capability"] = "audit"
+                si_params["subsystem"] = "routing"
+
+            logger.info(f"[SELF-IMPROVE BYPASS] Params: {si_params}")
+
+            si_task = _SITask(
+                agent_name="self_improvement_agent",
+                instruction=request.message,
+                params=si_params,
+            )
+            si_result = await si_agent.run(si_task)
+            logger.info(f"[SELF-IMPROVE BYPASS] Result: success={si_result.success}")
+
+            if si_result.success and si_result.output:
+                import json as _json_si
+                raw_output = _json_si.dumps(si_result.output, indent=2, default=str)[:10000]
+
+                format_messages = [
+                    {"role": "system", "content": (
+                        "You are Cipher. You just ran your self-improvement agent and got real results. "
+                        "Report what was audited, what issues were found, what was fixed, and what failed. "
+                        "Be concise and action-oriented. Use bullet points for findings. "
+                        "If fixes were applied, state which files changed. "
+                        "If fixes rolled back, explain why. No essays. No theory."
+                    )},
+                    {"role": "user", "content": (
+                        f"Mark said: {request.message}\n\n"
+                        f"Self-improvement results:\n{raw_output}"
+                    )},
+                ]
+                format_result = await chat_completion(
+                    messages=format_messages,
+                    model_tier=model_tier,
+                    max_tokens=3000,
+                    temperature=0.3,
+                )
+                formatted_msg = ""
+                if format_result and isinstance(format_result, dict):
+                    formatted_msg = format_result.get("content", "")
+                if not formatted_msg:
+                    output = si_result.output
+                    formatted_msg = (
+                        f"Self-improvement cycle complete. "
+                        f"Fixes applied: {len(output.get('fixes_applied', []))}. "
+                        f"Issues found: {output.get('issues_found', 0)}."
+                    )
+
+                return ChatResponse(
+                    message=formatted_msg,
+                    conversation_id=conversation_id,
+                    model_used=format_result.get("model_used", "") if isinstance(format_result, dict) else "unknown",
+                    tokens_used=format_result.get("total_tokens", 0) if isinstance(format_result, dict) else 0,
+                    cost_usd=format_result.get("cost_usd", 0.0) if isinstance(format_result, dict) else 0.0,
+                )
+            else:
+                logger.error(f"[SELF-IMPROVE BYPASS] Agent failed: {si_result.error}")
+                live_data_context += (
+                    f"\n\n[SELF-IMPROVEMENT ERROR]\n"
+                    f"The self-improvement agent failed: {si_result.error}\n"
+                    f"Tell Mark what went wrong.\n"
+                )
+        except Exception as e:
+            logger.error(f"[SELF-IMPROVE BYPASS] Exception: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[SELF-IMPROVE BYPASS] Traceback: {traceback.format_exc()}")
+
     # 3. Check cache (SKIP cache for data queries — data changes in real-time)
     if not live_data_context:
         cached = get_cached_response(
@@ -1029,6 +1130,10 @@ async def process_chat(
                           "cpu usage", "memory usage", "check if site is up"],
         "scheduler_agent": ["schedule a task", "set up a cron", "recurring task", "schedule daily",
                             "schedule weekly", "automate this"],
+        "self_improvement_agent": ["fix yourself", "improve yourself", "audit yourself", "self-improve",
+                                   "self improve", "run self-improvement", "benchmark agents",
+                                   "agent health check", "diagnose yourself", "self-maintenance",
+                                   "start updating", "lets start updating", "run maintenance"],
         "ad_pipeline_agent": ["generate ads", "create ads", "make ads", "ad campaign", "ad creative",
                               "ad pipeline", "run ad pipeline", "batch ads", "automated ads",
                               "ad set for", "create ad set", "generate ad set", "ad images",
