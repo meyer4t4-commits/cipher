@@ -61,12 +61,24 @@ class ProvisioningAgent(BaseAgent):
             ],
         )
 
-        self._data_dir = Path("./data/expansion_pulse/provisioning")
-        self._data_dir.mkdir(parents=True, exist_ok=True)
-        self._clients_dir = Path("./data/clients")
-        self._clients_dir.mkdir(parents=True, exist_ok=True)
-        self._docs_dir = Path("./data/documents")
-        self._docs_dir.mkdir(parents=True, exist_ok=True)
+        # Use /tmp on Railway (read-only filesystem) or ./data locally
+        _base = Path(os.getenv("CIPHER_DATA_DIR", "/tmp/cipher_data"))
+        self._data_dir = _base / "expansion_pulse" / "provisioning"
+        self._clients_dir = _base / "clients"
+        self._docs_dir = _base / "documents"
+        try:
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            self._clients_dir.mkdir(parents=True, exist_ok=True)
+            self._docs_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # Railway read-only FS — use /tmp fallback
+            _base = Path("/tmp/cipher_data")
+            self._data_dir = _base / "expansion_pulse" / "provisioning"
+            self._clients_dir = _base / "clients"
+            self._docs_dir = _base / "documents"
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            self._clients_dir.mkdir(parents=True, exist_ok=True)
+            self._docs_dir.mkdir(parents=True, exist_ok=True)
 
         # Shopify API config
         self.shopify_store = os.getenv("SHOPIFY_STORE", "")  # e.g. "0kvur9-n0" (without .myshopify.com)
