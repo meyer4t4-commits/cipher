@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     # --- Database ---
     database_url: str = "sqlite:///./data/cipher.db"
-    chroma_persist_dir: str = "./data/chroma"
+    chroma_persist_dir: str = "./data/chroma"  # Deprecated: memory now uses PostgreSQL. Kept for env compat.
 
     # --- Telegram ---
     telegram_bot_token: str = ""

@@ -28,7 +28,7 @@ celery_app.conf.update(
 def summarize_conversation(conversation_id: str) -> dict:
     """
     Summarize a long conversation into key points.
-    Stores the summary in ChromaDB for future retrieval.
+    Stores the summary in PostgreSQL memory for future retrieval.
     """
     # Import here to avoid circular imports
     from app.db.database import SessionLocal
@@ -68,7 +68,7 @@ def summarize_conversation(conversation_id: str) -> dict:
 @celery_app.task(name="cipher.index_document")
 def index_document(content: str, metadata: dict = None) -> dict:
     """
-    Index a document into ChromaDB for RAG retrieval.
+    Index a document into memory for RAG retrieval.
     Splits content into chunks and stores each with embeddings.
     """
     from app.services.memory import store_memory

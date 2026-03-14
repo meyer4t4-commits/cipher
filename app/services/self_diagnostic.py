@@ -416,13 +416,13 @@ async def attempt_self_fix(issue: str) -> dict:
     """
     fixes_attempted = []
 
-    if "memory" in issue.lower() or "chroma" in issue.lower():
+    if "memory" in issue.lower() or "chroma" in issue.lower() or "postgresql" in issue.lower():
         try:
             from app.services.memory import initialize_memory
             initialize_memory()
-            fixes_attempted.append({"issue": "Memory/ChromaDB", "action": "Re-initialized memory store", "success": True})
+            fixes_attempted.append({"issue": "Memory (PostgreSQL)", "action": "Re-initialized memory store", "success": True})
         except Exception as e:
-            fixes_attempted.append({"issue": "Memory/ChromaDB", "action": "Re-initialize failed", "success": False, "error": str(e)[:200]})
+            fixes_attempted.append({"issue": "Memory (PostgreSQL)", "action": "Re-initialize failed", "success": False, "error": str(e)[:200]})
 
     if "database" in issue.lower() or "db" in issue.lower():
         try:

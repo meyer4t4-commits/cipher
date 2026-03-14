@@ -25,16 +25,16 @@ async def health_check():
     # Check memory
     try:
         mem_stats = get_memory_stats()
-        chroma_ok = True
+        memory_ok = True
     except Exception:
-        chroma_ok = False
+        memory_ok = False
 
     return HealthCheck(
         status="healthy",
         version=__version__,
         uptime_seconds=round(time.time() - _start_time, 1),
         database_connected=True,
-        chroma_connected=chroma_ok,
+        memory_connected=memory_ok,
     )
 
 

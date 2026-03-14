@@ -269,7 +269,7 @@ class SelfTestSuite:
         return tc
 
     async def _test_memory_system(self) -> TestCase:
-        """Test that ChromaDB memory store/recall works."""
+        """Test that PostgreSQL memory store/recall works."""
         tc = TestCase(name="memory_system", category="integration", weight=1.5)
         start = time.time()
         try:

@@ -49,7 +49,7 @@ WEAKNESS_CATEGORIES = {
     },
     "memory_system": {
         "label": "Memory System",
-        "description": "ChromaDB recall, relevance scoring, or storage issues",
+        "description": "PostgreSQL memory recall, relevance scoring, or storage issues",
         "severity": 0.65,
     },
     "streaming": {
@@ -250,7 +250,7 @@ def _get_suggestion(category: str, evidence: list, score: float) -> str:
         "tool_reliability": "Add input validation and better error messages to direct tools. Test edge cases.",
         "response_quality": "Tune system prompt for more actionable responses. Add quality gate checks.",
         "prompt_coherence": "Strengthen personality directives. Add examples of correct vs incorrect behavior.",
-        "memory_system": "Optimize ChromaDB relevance scoring. Ensure memories are being stored and retrieved correctly.",
+        "memory_system": "Optimize PostgreSQL memory relevance scoring. Ensure memories are being stored and retrieved correctly.",
         "streaming": "Test SSE heartbeat pattern. Verify iOS client handles keepalive tokens correctly.",
         "vision": "Test image generation end-to-end. Verify DALL-E 3 and Stability AI fallback work.",
         "performance": "Profile the orchestrator pipeline. Optimize the slowest stages (memory recall, fact-checking).",

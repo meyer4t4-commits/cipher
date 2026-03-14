@@ -157,7 +157,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Version: {data['version']}\n"
             f"Uptime: {data['uptime_seconds']:.0f}s\n"
             f"DB: {'connected' if data['database_connected'] else 'disconnected'}\n"
-            f"Memory: {'connected' if data['chroma_connected'] else 'disconnected'}"
+            f"Memory: {'connected' if data.get('memory_connected', data.get('chroma_connected', False)) else 'disconnected'}"
         )
         await update.message.reply_text(text)
 

@@ -147,4 +147,4 @@ class HealthCheck(BaseModel):
     uptime_seconds: float
     models_available: list[str] = []
     database_connected: bool = True
-    chroma_connected: bool = True
+    memory_connected: bool = True
