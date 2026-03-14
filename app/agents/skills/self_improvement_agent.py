@@ -437,18 +437,48 @@ class SelfImprovementAgent(BaseAgent):
         }
 
     def _log_fix(self, file_path: str, description: str, fix_type: str, old: str, new: str):
-        """Log a fix to the improvement history."""
-        log_file = self._log_dir / "fix_history.jsonl"
-        entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "file": file_path,
-            "description": description,
-            "fix_type": fix_type,
-            "old_preview": old,
-            "new_preview": new,
-        }
-        with open(log_file, "a") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+        """Log a fix to the database (survives deploys) with /tmp fallback."""
+        import hashlib
+
+        old_hash = hashlib.sha256(old.encode()).hexdigest()[:16] if old else ""
+        new_hash = hashlib.sha256(new.encode()).hexdigest()[:16] if new else ""
+
+        # Primary: persist to database
+        try:
+            from app.db.database import SessionLocal
+            from app.db.models import SelfFixLog
+            db = SessionLocal()
+            record = SelfFixLog(
+                file_path=file_path,
+                action=fix_type,
+                old_content_hash=old_hash,
+                new_content_hash=new_hash,
+                description=description[:2000],
+                success=True,
+                verified=False,
+            )
+            db.add(record)
+            db.commit()
+            db.close()
+            logger.info(f"[SELF-IMPROVE] Fix logged to database: {file_path}")
+        except Exception as db_err:
+            logger.debug(f"[SELF-IMPROVE] DB log failed (non-fatal): {db_err}")
+
+            # Fallback: write to /tmp JSONL
+            try:
+                log_file = self._log_dir / "fix_history.jsonl"
+                entry = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "file": file_path,
+                    "description": description,
+                    "fix_type": fix_type,
+                    "old_hash": old_hash,
+                    "new_hash": new_hash,
+                }
+                with open(log_file, "a") as f:
+                    f.write(json.dumps(entry, default=str) + "\n")
+            except Exception:
+                pass  # Don't let logging break fixes
 
     # ------------------------------------------------------------------
     # IMPROVE — Full improvement cycle

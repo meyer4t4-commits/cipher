@@ -199,3 +199,26 @@ class SelfFixLog(Base):
     verified = Column(Boolean, default=False)  # Did post-fix test pass?
     rolled_back = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Telemetry — Cipher tracks every agent/tool invocation for learning
+# ---------------------------------------------------------------------------
+
+class TelemetryLog(Base):
+    """Every agent/tool invocation gets logged here for performance analysis.
+    Cipher can query this to answer: which agents fail most? What's slow?
+    What does Mark use most? This survives deploys (unlike /tmp)."""
+    __tablename__ = "telemetry_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_or_tool = Column(String(100), nullable=False, index=True)  # agent name or tool name
+    operation = Column(String(100), nullable=True)  # capability/operation within the agent
+    success = Column(Boolean, default=True)
+    latency_ms = Column(Float, default=0.0)
+    error_message = Column(String(500), nullable=True)
+    query_snippet = Column(String(300), nullable=True)  # First 300 chars of user message
+    model_used = Column(String(100), nullable=True)
+    tokens_used = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=utcnow, index=True)

@@ -368,6 +368,8 @@ async def process_chat(
     8. Store response and update memory
     9. Check for agent recommendations
     """
+    import time as _time_telemetry
+    _telemetry_start = _time_telemetry.time()
 
     # 1. Load or create conversation
     conversation_id = request.conversation_id or str(uuid.uuid4())
@@ -624,6 +626,19 @@ async def process_chat(
                     logger.info(f"[CONTENT BYPASS] Insight absorber launched for {_extracted_url}")
                 except Exception as _absorb_err:
                     logger.debug(f"[CONTENT BYPASS] Insight absorber skipped: {_absorb_err}")
+
+                # ── Telemetry: content extraction ──
+                try:
+                    from app.services.telemetry import log_telemetry
+                    log_telemetry(
+                        agent_or_tool="content_extractor_agent",
+                        operation=content_params.get("operation", "auto_extract"),
+                        success=True,
+                        latency_ms=(_time_telemetry.time() - _telemetry_start) * 1000,
+                        query_snippet=(request.message or "")[:300],
+                    )
+                except Exception:
+                    pass
 
                 return ChatResponse(
                     message=formatted_msg,
@@ -959,6 +974,19 @@ async def process_chat(
                         f"Fixes applied: {len(output.get('fixes_applied', []))}. "
                         f"Issues found: {output.get('issues_found', 0)}."
                     )
+
+                # ── Telemetry: self-improvement ──
+                try:
+                    from app.services.telemetry import log_telemetry
+                    log_telemetry(
+                        agent_or_tool="self_improvement_agent",
+                        operation=si_params.get("capability", "improve"),
+                        success=si_result.success,
+                        latency_ms=(_time_telemetry.time() - _telemetry_start) * 1000,
+                        query_snippet=(request.message or "")[:300],
+                    )
+                except Exception:
+                    pass
 
                 return ChatResponse(
                     message=formatted_msg,
@@ -1603,6 +1631,23 @@ async def process_chat(
             for url in _re.findall(r'(https?://[^\s"\']+)', result_preview):
                 if any(ext in url.lower() for ext in ['.png', '.jpg', '.jpeg', '.webp']) or 'oaidalleapiprodscus' in url:
                     response_images.append(ImageAttachment(url=url))
+
+    # ── Telemetry: log this request ──
+    try:
+        from app.services.telemetry import log_telemetry
+        _telemetry_ms = (_time_telemetry.time() - _telemetry_start) * 1000
+        log_telemetry(
+            agent_or_tool="orchestrator",
+            operation="main_llm",
+            success=True,
+            latency_ms=_telemetry_ms,
+            query_snippet=(request.message or "")[:300],
+            model_used=result.get("model_used", ""),
+            tokens_used=result.get("total_tokens", 0),
+            cost_usd=result.get("cost_usd", 0.0),
+        )
+    except Exception:
+        pass
 
     return ChatResponse(
         message=result["content"],
