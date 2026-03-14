@@ -108,6 +108,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database init failed: {e} — app will continue but DB features may be limited")
         logger.error("If on Railway, ensure volume is mounted at /app/data or set DATABASE_URL to PostgreSQL")
+
+    # Seed memory with operational playbooks (runs every startup since memory is ephemeral)
+    try:
+        from app.services.memory_seeds import seed_memory
+        seed_count = seed_memory()
+        if seed_count:
+            logger.info(f"Memory seeded: {seed_count} playbooks loaded")
+    except Exception as e:
+        logger.debug(f"Memory seeding skipped: {e}")
     providers = []
     if settings.anthropic_api_key:
         providers.append("Anthropic")

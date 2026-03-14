@@ -20,7 +20,7 @@ from app.core.logging import logger
 from app.db.models import ConversationRecord, MessageRecord, UsageLog
 from app.models.schemas import ChatRequest, ChatResponse, ImageAttachment, ModelTier, RecommendedAgentInfo
 from app.services.llm_router import chat_completion, chat_completion_with_tools
-from app.services.memory import recall_memories, store_conversation_context
+from app.services.memory import recall_memories, store_conversation_context, store_learning
 from app.services.classifier import auto_classify
 from app.services.cache import get_cached_response, cache_response
 from app.services.voice_personalities import get_personality_manager
@@ -427,6 +427,18 @@ async def process_chat(
             live_data_context += search_data
             logger.info("Live search data injected into context")
 
+    # ── Helper: persist memory on ALL code paths (including bypasses) ──
+    def _persist_context(response_text: str, bypass_name: str = ""):
+        """Store conversation context in database. Called on every return path."""
+        try:
+            store_conversation_context(
+                conversation_id=conversation_id,
+                user_message=request.message,
+                assistant_response=response_text,
+            )
+        except Exception as _mem_err:
+            logger.debug(f"Memory persist failed ({bypass_name}): {_mem_err}")
+
     # ═══════════════════════════════════════════════════════════════════
     # SHOPIFY HARD BYPASS — skip LLM routing entirely for Shopify requests
     # The LLM can't reliably route to provisioning_agent, so we call it
@@ -489,6 +501,7 @@ async def process_chat(
                     if not formatted_msg:
                         formatted_msg = f"Here's your Shopify data:\n\n```json\n{raw_data[:4000]}\n```"
 
+                    _persist_context(formatted_msg, "shopify")
                     return ChatResponse(
                         message=formatted_msg,
                         conversation_id=conversation_id,
@@ -640,6 +653,7 @@ async def process_chat(
                 except Exception:
                     pass
 
+                _persist_context(formatted_msg, "content_extract")
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -751,6 +765,7 @@ async def process_chat(
                     f"Took {len(actions)} actions: " + "; ".join(a.get("action", "") for a in actions)
                 )
 
+            _persist_context(formatted_msg, "self_train")
             return ChatResponse(
                 message=formatted_msg,
                 conversation_id=conversation_id,
@@ -860,6 +875,7 @@ async def process_chat(
                             analysis=f"{ad.get('headline', 'Ad image')} — {ad.get('platform', 'social')}",
                         ))
 
+                _persist_context(formatted_msg, "ad_pipeline")
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -988,6 +1004,7 @@ async def process_chat(
                 except Exception:
                     pass
 
+                _persist_context(formatted_msg, "self_improve")
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -1536,15 +1553,8 @@ async def process_chat(
         except Exception:
             pass
 
-    # Store in long-term memory
-    try:
-        store_conversation_context(
-            conversation_id=conversation_id,
-            user_message=request.message,
-            assistant_response=result["content"],
-        )
-    except Exception as e:
-        logger.warning(f"Failed to store memory: {e}")
+    # Store in long-term memory (database-backed — persists across deploys)
+    _persist_context(result["content"], "main")
 
     # 10. Check if an agent should be recommended
     recommended_agent = None

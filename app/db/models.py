@@ -205,6 +205,27 @@ class SelfFixLog(Base):
 # Telemetry — Cipher tracks every agent/tool invocation for learning
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Memory — Cipher's persistent knowledge across deploys
+# ---------------------------------------------------------------------------
+
+class MemoryEntry(Base):
+    """Persistent memory storage. Replaces ephemeral JSON/in-memory store.
+    Every conversation exchange, learned insight, playbook, and operational
+    knowledge lives here — survives Railway deploys."""
+    __tablename__ = "memory_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    collection_name = Column(String(100), nullable=False, default="cipher_memory", index=True)
+    content = Column(Text, nullable=False)
+    # Store metadata as JSON text — flexible for any key-value pairs
+    metadata_json = Column(Text, nullable=True)  # JSON string
+    source = Column(String(50), nullable=True, index=True)  # conversation, seed, agent, user
+    memory_type = Column(String(50), nullable=True, index=True)  # exchange, playbook, brand_profile, operating_principle, etc.
+    priority = Column(String(20), nullable=True)  # critical, high, normal, low
+    created_at = Column(DateTime, default=utcnow, index=True)
+
+
 class TelemetryLog(Base):
     """Every agent/tool invocation gets logged here for performance analysis.
     Cipher can query this to answer: which agents fail most? What's slow?
