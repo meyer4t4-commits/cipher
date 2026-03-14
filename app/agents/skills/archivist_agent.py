@@ -98,10 +98,11 @@ class ArchivistAgent(BaseAgent):
         self.index_path = self.data_dir / "index.json"
         self.embeddings_dir = self.data_dir / "embeddings"
 
-        # Agent log directories mapping
+        # Agent log directories mapping — use /tmp fallback for Railway
+        _data_base = Path("/tmp/cipher_data") if not Path("data").exists() or not os.access("data", os.W_OK) else Path("data")
         self.agent_log_dirs: Dict[str, Path] = {
-            "apex_asset_hunter": Path("data/apex_asset_hunter/"),
-            "chronos": Path("data/chronos/"),
+            "apex_asset_hunter": _data_base / "apex_asset_hunter",
+            "chronos": _data_base / "chronos",
             # Add other agent directories as needed
         }
 

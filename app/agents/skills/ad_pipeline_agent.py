@@ -70,7 +70,12 @@ class AdPipelineAgent(BaseAgent):
             ],
         )
         self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._output_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self._output_dir = Path("/tmp/cipher_data/ad_pipeline")
+            self._output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("[AD PIPELINE] Using /tmp fallback for output_dir")
 
     async def validate(self, task: AgentTask) -> bool:
         cap = task.params.get("capability", task.instruction.split()[0] if task.instruction else "")

@@ -19,8 +19,14 @@ from typing import Optional
 
 from app.core.logging import logger
 
-# Experiment storage directory
-RESEARCH_DIR = Path(os.getenv("CIPHER_RESEARCH_DIR", "data/research"))
+# Experiment storage directory — with /tmp fallback for Railway read-only FS
+_research_env = os.getenv("CIPHER_RESEARCH_DIR", "data/research")
+RESEARCH_DIR = Path(_research_env)
+try:
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    RESEARCH_DIR = Path("/tmp/cipher_data/research")
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
 EXPERIMENTS_DIR = RESEARCH_DIR / "experiments"
 SNAPSHOTS_DIR = RESEARCH_DIR / "snapshots"
 LOGS_DIR = RESEARCH_DIR / "logs"

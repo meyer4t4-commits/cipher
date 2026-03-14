@@ -30,8 +30,19 @@ _browser = None
 _browser_context = None
 _page_cache: dict[str, Any] = {}  # tab_id -> page
 
-SESSIONS_DIR = Path("data/browser_sessions")
-SCREENSHOTS_DIR = Path("data/browser_screenshots")
+def _safe_data_dir(subdir: str) -> Path:
+    """Return a writable data directory, falling back to /tmp on Railway."""
+    primary = Path(f"data/{subdir}")
+    try:
+        primary.mkdir(parents=True, exist_ok=True)
+        return primary
+    except PermissionError:
+        fallback = Path(f"/tmp/cipher_data/{subdir}")
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+SESSIONS_DIR = _safe_data_dir("browser_sessions")
+SCREENSHOTS_DIR = _safe_data_dir("browser_screenshots")
 
 
 async def _ensure_browser():

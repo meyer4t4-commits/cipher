@@ -862,6 +862,10 @@ async def process_chat(
         "test your agents", "agent health check", "run a health check",
         "start updating", "lets start updating", "let's start updating",
         "fix what's wrong", "repair yourself", "self-maintenance",
+        "audit memory", "audit orchestrator", "audit agents", "audit routing",
+        "audit tools", "audit system_prompt", "audit diagnostics", "audit self_healing",
+        "use self_improvement_agent", "use your self_improvement_agent",
+        "run self_improvement_agent", "self improvement agent",
     ]
     if any(kw in msg_lower for kw in _self_improve_keywords):
         logger.info("[SELF-IMPROVE BYPASS] Detected self-improvement request — calling self_improvement_agent")
@@ -871,20 +875,26 @@ async def process_chat(
 
             si_agent = SelfImprovementAgent()
 
-            # Determine which capability to use
+            # Determine which capability to use based on message content
             si_params = {"capability": "improve", "max_fixes": 3}
 
-            if any(kw in msg_lower for kw in ["audit", "diagnose", "health check", "what's broken", "what needs fixing"]):
+            # Check for specific subsystem audit requests FIRST (most specific match)
+            _subsystem_names = ["memory", "orchestrator", "agents", "self_healing", "routing", "tools", "system_prompt", "diagnostics"]
+            _detected_subsystem = None
+            for _sub in _subsystem_names:
+                if _sub in msg_lower:
+                    _detected_subsystem = _sub
+                    break
+
+            if any(kw in msg_lower for kw in ["audit", "diagnose", "health check", "what's broken", "what needs fixing", "check your"]):
                 si_params["capability"] = "audit"
-                si_params["subsystem"] = "all"
+                si_params["subsystem"] = _detected_subsystem or "all"
             elif any(kw in msg_lower for kw in ["benchmark", "test your agents", "agent health"]):
                 si_params["capability"] = "benchmark"
-            elif any(kw in msg_lower for kw in ["memory", "recall", "remember"]):
+            elif _detected_subsystem and any(kw in msg_lower for kw in ["fix", "repair", "improve"]):
+                # "fix memory", "improve routing" etc — audit that subsystem first, then improve
                 si_params["capability"] = "audit"
-                si_params["subsystem"] = "memory"
-            elif any(kw in msg_lower for kw in ["routing", "model", "llm"]):
-                si_params["capability"] = "audit"
-                si_params["subsystem"] = "routing"
+                si_params["subsystem"] = _detected_subsystem
 
             logger.info(f"[SELF-IMPROVE BYPASS] Params: {si_params}")
 
