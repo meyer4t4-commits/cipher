@@ -38,9 +38,10 @@ from app.agents.models import AgentCapability, AgentResult, AgentTask
 from app.core.logging import logger
 
 
-# Maximum characters to read from a single file in one step
-# This keeps us well within context window limits
-MAX_FILE_CHARS = 6000
+# Maximum characters to read from a single file in one step.
+# Raised from 6000 to 15000 — the old limit caused the LLM to see
+# abruptly-truncated files and report phantom "incomplete" bugs.
+MAX_FILE_CHARS = 15000
 
 # Subsystems that can be audited independently
 AUDITABLE_SUBSYSTEMS = {
@@ -281,13 +282,19 @@ class SelfImprovementAgent(BaseAgent):
         """Deep audit: read files and use LLM to find issues."""
         from app.services.llm_router import chat_completion
 
-        # Read each file (truncated to context limit)
+        # Read each file (truncated to context limit with explicit marker)
         file_contents = {}
+        file_truncated = {}
         for fpath in info["files"]:
             full_path = self._project_root / fpath
             if full_path.exists():
-                content = full_path.read_text()[:MAX_FILE_CHARS]
+                full_text = full_path.read_text()
+                truncated = len(full_text) > MAX_FILE_CHARS
+                content = full_text[:MAX_FILE_CHARS]
+                if truncated:
+                    content += f"\n\n# ... FILE TRUNCATED at {MAX_FILE_CHARS} of {len(full_text)} chars. Code continues beyond this point. Do NOT report issues about incomplete code near the end of this snippet.\n"
                 file_contents[fpath] = content
+                file_truncated[fpath] = truncated
 
         if not file_contents:
             return {
@@ -301,19 +308,24 @@ class SelfImprovementAgent(BaseAgent):
 
         # LLM analysis — focused prompt to avoid essay responses
         files_text = "\n\n".join(
-            f"=== {fp} (first {len(c)} chars) ===\n{c}"
+            f"=== {fp} ({len(c)} chars{', TRUNCATED — code continues beyond this snippet' if file_truncated.get(fp) else ''}) ===\n{c}"
             for fp, c in file_contents.items()
         )
 
         messages = [
             {"role": "system", "content": (
                 "You are a code auditor. Analyze the code below for SPECIFIC, FIXABLE issues.\n\n"
-                "CRITICAL RULES:\n"
+                "CRITICAL RULES — FOLLOW ALL OF THESE:\n"
                 "1. READ THE ACTUAL CODE before reporting. If a function exists in the code, do NOT report it as missing.\n"
                 "2. The subsystem description lists what functions and features ALREADY EXIST. Do not report those as missing.\n"
                 "3. Only report bugs you can point to with a specific line/function.\n"
                 "4. Do NOT suggest adding features that already exist in the code.\n"
-                "5. Do NOT report things as bugs just because they don't match your expectations — read what the code actually does.\n\n"
+                "5. Do NOT report things as bugs just because they don't match your expectations — read what the code actually does.\n"
+                "6. FILES MAY BE TRUNCATED. If you see '# ... FILE TRUNCATED' or the file ends mid-function, "
+                "   the code CONTINUES beyond what you can see. Do NOT report 'incomplete function', 'missing closing bracket', "
+                "   'truncated dictionary', or similar issues near the end of a truncated file.\n"
+                "7. ONLY audit the subsystem you were asked about. Do NOT report issues in unrelated code that happens to be in the same file.\n"
+                "8. If syntax checks passed (shown below), do NOT report syntax errors.\n\n"
                 "For each REAL issue found, output a JSON object with:\n"
                 "- type: bug|performance|missing_feature|dead_code|security|config\n"
                 "- severity: critical|high|medium|low\n"
@@ -323,12 +335,13 @@ class SelfImprovementAgent(BaseAgent):
                 "- fix: exact code change needed (old → new)\n\n"
                 "Output ONLY a JSON array. No explanations. No essays.\n"
                 "If no issues found, output: []\n"
-                "PREFER returning [] over false positives. Only report issues you are CERTAIN about."
+                "PREFER returning [] over false positives. Only report issues you are CERTAIN about.\n"
+                "A false positive wastes the team's time. An empty [] when things are fine is the RIGHT answer."
             )},
             {"role": "user", "content": (
                 f"Subsystem: {name}\n"
                 f"Description (these features ALREADY EXIST): {info['description']}\n"
-                f"Quick check passed: {quick_check.get('passed', False)}\n\n"
+                f"Quick check (syntax) passed: {quick_check.get('passed', False)}\n\n"
                 f"Code:\n{files_text}"
             )},
         ]
@@ -492,23 +505,39 @@ class SelfImprovementAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def _improve_cycle(self, task: AgentTask) -> dict:
-        """Run a complete improvement cycle: audit → fix → test → next.
-        IMPORTANT: This should only run when Mark explicitly asks for auto-fix.
-        The default orchestrator path routes to audit-only."""
+        """Run an improvement cycle: audit → report findings → optionally fix.
+
+        GUARDRAILS:
+        - Only audits the subsystem specified in 'focus' (never wanders to others)
+        - Only fixes issues in files belonging to that subsystem
+        - Max 3 fixes per cycle (hard-capped at 5)
+        - All fixes are ephemeral (runtime patches wiped on deploy from git)
+        - Default orchestrator routing sends 'audit' capability, not 'improve'
+        """
         focus = task.params.get("focus", "all")
-        max_fixes = min(task.params.get("max_fixes", 3), 5)  # Hard cap at 5 to limit damage
+        max_fixes = min(task.params.get("max_fixes", 3), 5)  # Hard cap at 5
+
+        # Determine which files are in-scope for this cycle
+        allowed_files = set()
+        if focus != "all" and focus in AUDITABLE_SUBSYSTEMS:
+            allowed_files = set(AUDITABLE_SUBSYSTEMS[focus]["files"])
+        elif focus == "all":
+            for info in AUDITABLE_SUBSYSTEMS.values():
+                allowed_files.update(info["files"])
 
         results = {
             "status": "completed",
             "cycle_started": datetime.now(timezone.utc).isoformat(),
             "focus": focus,
+            "allowed_files": list(allowed_files),
             "audits": [],
             "fixes_applied": [],
             "fixes_failed": [],
             "fixes_rolled_back": [],
+            "fixes_skipped_out_of_scope": [],
         }
 
-        # Step 1: Audit
+        # Step 1: Audit (only the focused subsystem)
         self.emit_progress("Phase 1: Auditing...")
         audit_task = AgentTask(
             agent_name=self.name,
@@ -525,7 +554,7 @@ class SelfImprovementAgent(BaseAgent):
             results["summary"] = "Audit complete. No fixes needed."
             return results
 
-        # Step 2: Apply fixes one at a time
+        # Step 2: Apply fixes — ONLY in allowed files
         fixes_applied = 0
         for issue in priority_fixes[:max_fixes]:
             if fixes_applied >= max_fixes:
@@ -536,6 +565,16 @@ class SelfImprovementAgent(BaseAgent):
             description = issue.get("description", "Unknown fix")
 
             if not fix_info or not file_path:
+                continue
+
+            # SCOPE CHECK: reject fixes to files outside the focused subsystem
+            if allowed_files and file_path not in allowed_files:
+                results["fixes_skipped_out_of_scope"].append({
+                    "file": file_path,
+                    "description": description,
+                    "reason": f"File not in scope for '{focus}' subsystem. Allowed: {list(allowed_files)}",
+                })
+                logger.info(f"[SELF-IMPROVE] Skipping out-of-scope fix: {file_path} (focus={focus})")
                 continue
 
             self.emit_progress(f"Phase 2: Fixing {description}...")
@@ -551,7 +590,6 @@ class SelfImprovementAgent(BaseAgent):
                 old_code = parts[0].strip()
                 new_code = parts[1].strip()
             else:
-                # Can't parse — skip
                 results["fixes_failed"].append({
                     "description": description,
                     "reason": "Could not parse fix format",
@@ -581,10 +619,12 @@ class SelfImprovementAgent(BaseAgent):
             else:
                 results["fixes_failed"].append(fix_result)
 
+        skipped = len(results["fixes_skipped_out_of_scope"])
         results["summary"] = (
             f"Applied {len(results['fixes_applied'])} fixes, "
             f"{len(results['fixes_rolled_back'])} rolled back, "
-            f"{len(results['fixes_failed'])} failed."
+            f"{len(results['fixes_failed'])} failed"
+            f"{f', {skipped} skipped (out of scope)' if skipped else ''}."
         )
         return results
 
