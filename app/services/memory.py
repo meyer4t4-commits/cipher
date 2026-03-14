@@ -119,10 +119,19 @@ def store_memory(
         # Check for existing entry with same ID (idempotent for seeds)
         existing = db.query(MemoryEntry).filter(MemoryEntry.id == mem_id).first()
         if existing:
-            # Update content if it changed
+            # Update content or metadata if anything changed
+            new_meta_json = json.dumps(meta, default=str)
+            changed = False
             if existing.content != content:
                 existing.content = content
-                existing.metadata_json = json.dumps(meta, default=str)
+                changed = True
+            if existing.metadata_json != new_meta_json:
+                existing.metadata_json = new_meta_json
+                changed = True
+            if existing.priority != meta.get("priority", "normal"):
+                existing.priority = meta.get("priority", "normal")
+                changed = True
+            if changed:
                 db.commit()
                 logger.debug(f"Updated existing memory {mem_id[:8]}...")
             db.close()
