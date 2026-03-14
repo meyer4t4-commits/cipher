@@ -9,11 +9,26 @@ No more JSON files. No more in-memory dicts that wipe on restart.
 """
 
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from app.core.logging import logger
+
+# --- Importance scoring keywords ---
+# Phrases that indicate high-value content worth remembering
+_HIGH_IMPORTANCE_SIGNALS = [
+    "remember", "always", "never", "important", "rule", "target audience",
+    "brand", "strategy", "pricing", "competitor", "playbook", "framework",
+    "apply to everything", "from now on", "going forward", "for all",
+    "tallowroots", "tallow roots", "shopify", "seo", "ad campaign",
+    "product", "customer", "revenue", "conversion",
+]
+_LOW_IMPORTANCE_SIGNALS = [
+    "what time", "hello", "hi", "hey", "thanks", "thank you", "ok",
+    "got it", "sure", "sounds good",
+]
 
 
 def _get_db():
@@ -26,17 +41,55 @@ def _get_db():
         return None
 
 
-def _relevance_score(query: str, document: str) -> float:
-    """Score how relevant a document is to a query using keyword overlap + sequence matching."""
+def _relevance_score(query: str, document: str, created_at: datetime | None = None) -> float:
+    """Score how relevant a document is to a query.
+    Combines keyword overlap (40%), sequence matching (30%), and recency (30%)."""
     query_lower = query.lower()
     doc_lower = document.lower()
     query_words = set(query_lower.split())
     doc_words = set(doc_lower.split())
     if not query_words:
         return 0.0
+
+    # Keyword overlap
     overlap = len(query_words & doc_words) / len(query_words)
+
+    # Sequence similarity
     seq_score = SequenceMatcher(None, query_lower[:200], doc_lower[:200]).ratio()
-    return (overlap * 0.6) + (seq_score * 0.4)
+
+    # Recency boost — newer memories score higher (decay over 30 days)
+    recency = 0.5  # default for entries without timestamp
+    if created_at:
+        now = datetime.now(timezone.utc)
+        age_hours = max(0, (now - created_at).total_seconds() / 3600)
+        # Exponential decay: 1.0 at 0h, ~0.5 at 720h (30 days), ~0.1 at 2000h
+        recency = math.exp(-age_hours / 1000)
+
+    return (overlap * 0.4) + (seq_score * 0.3) + (recency * 0.3)
+
+
+def _score_importance(text: str) -> str:
+    """Auto-score the importance of a piece of content.
+    Returns: 'critical', 'high', 'normal', or 'low'."""
+    text_lower = text.lower()
+
+    # Check for low-importance signals (greetings, acknowledgments)
+    low_count = sum(1 for sig in _LOW_IMPORTANCE_SIGNALS if sig in text_lower)
+    if low_count >= 2 and len(text) < 100:
+        return "low"
+
+    # Check for high-importance signals
+    high_count = sum(1 for sig in _HIGH_IMPORTANCE_SIGNALS if sig in text_lower)
+    if high_count >= 3:
+        return "critical"
+    if high_count >= 1:
+        return "high"
+
+    # Longer content with substance is more important
+    if len(text) > 500:
+        return "high"
+
+    return "normal"
 
 
 def get_collection(name: str = "cipher_memory") -> str:
@@ -131,16 +184,17 @@ def recall_memories(
                     q = q.filter(MemoryEntry.priority == value)
                 # For other keys, we'd need JSON search — skip for now
 
-        entries = q.all()
+        # Limit to prevent loading entire DB into memory
+        entries = q.order_by(MemoryEntry.created_at.desc()).limit(1000).all()
 
         if not entries:
             db.close()
             return []
 
-        # Score and rank by relevance
+        # Score and rank by relevance (with recency weighting)
         scored = []
         for entry in entries:
-            score = _relevance_score(query, entry.content)
+            score = _relevance_score(query, entry.content, entry.created_at)
             meta = {}
             if entry.metadata_json:
                 try:
@@ -183,19 +237,58 @@ def store_conversation_context(
     assistant_response: str,
 ) -> str:
     """Store a conversation exchange as a memory entry.
-    This is called after every chat exchange so Cipher remembers ALL context."""
+    This is called after every chat exchange so Cipher remembers ALL context.
+    Auto-scores importance based on content."""
     # Truncate to avoid storing massive responses but keep enough context
     user_msg = user_message[:2000] if user_message else ""
     asst_resp = assistant_response[:3000] if assistant_response else ""
 
     content = f"User: {user_msg}\nAssistant: {asst_resp}"
+
+    # Auto-score importance based on user message content
+    importance = _score_importance(user_msg)
+
     return store_memory(
         content=content,
         metadata={
             "source": "conversation",
             "conversation_id": conversation_id,
             "type": "exchange",
-            "priority": "normal",
+            "priority": importance,
+        },
+    )
+
+
+def store_agent_result(
+    agent_name: str,
+    task_description: str,
+    result_summary: str,
+    success: bool = True,
+    user_query: str = "",
+) -> str:
+    """Store an agent execution result as a memory entry.
+    Called when agents complete work so Cipher remembers what it did and learned."""
+    content = (
+        f"Agent: {agent_name}\n"
+        f"Task: {task_description}\n"
+        f"Result: {result_summary[:2000]}\n"
+        f"Success: {success}"
+    )
+    importance = "high" if success else "normal"
+    # Boost importance if the user query was important
+    if user_query:
+        query_importance = _score_importance(user_query)
+        if query_importance in ("critical", "high"):
+            importance = query_importance
+
+    return store_memory(
+        content=content,
+        metadata={
+            "source": "agent",
+            "type": "agent_result",
+            "agent_name": agent_name,
+            "success": str(success),
+            "priority": importance,
         },
     )
 

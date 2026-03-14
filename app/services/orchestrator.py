@@ -20,7 +20,7 @@ from app.core.logging import logger
 from app.db.models import ConversationRecord, MessageRecord, UsageLog
 from app.models.schemas import ChatRequest, ChatResponse, ImageAttachment, ModelTier, RecommendedAgentInfo
 from app.services.llm_router import chat_completion, chat_completion_with_tools
-from app.services.memory import recall_memories, store_conversation_context, store_learning
+from app.services.memory import recall_memories, store_conversation_context, store_learning, store_agent_result
 from app.services.classifier import auto_classify
 from app.services.cache import get_cached_response, cache_response
 from app.services.voice_personalities import get_personality_manager
@@ -439,6 +439,19 @@ async def process_chat(
         except Exception as _mem_err:
             logger.debug(f"Memory persist failed ({bypass_name}): {_mem_err}")
 
+    def _persist_agent(agent_name: str, task: str, result_text: str, success: bool = True):
+        """Store agent result in memory. Called when bypass agents complete work."""
+        try:
+            store_agent_result(
+                agent_name=agent_name,
+                task_description=task,
+                result_summary=result_text[:1500],
+                success=success,
+                user_query=request.message,
+            )
+        except Exception as _mem_err:
+            logger.debug(f"Agent memory persist failed ({agent_name}): {_mem_err}")
+
     # ═══════════════════════════════════════════════════════════════════
     # SHOPIFY HARD BYPASS — skip LLM routing entirely for Shopify requests
     # The LLM can't reliably route to provisioning_agent, so we call it
@@ -502,6 +515,7 @@ async def process_chat(
                         formatted_msg = f"Here's your Shopify data:\n\n```json\n{raw_data[:4000]}\n```"
 
                     _persist_context(formatted_msg, "shopify")
+                    _persist_agent("provisioning_agent", "Shopify data request", formatted_msg, True)
                     return ChatResponse(
                         message=formatted_msg,
                         conversation_id=conversation_id,
@@ -512,6 +526,7 @@ async def process_chat(
                 else:
                     # Agent failed — log the error and let LLM handle gracefully
                     logger.error(f"[SHOPIFY BYPASS] Agent failed: {result.error}")
+                    _persist_agent("provisioning_agent", "Shopify data request", str(result.error), False)
                     live_data_context += (
                         f"\n\n[SHOPIFY AGENT ERROR — DO NOT HALLUCINATE]\n"
                         f"The Shopify Admin API call failed with: {result.error}\n"
@@ -654,6 +669,7 @@ async def process_chat(
                     pass
 
                 _persist_context(formatted_msg, "content_extract")
+                _persist_agent("content_extractor_agent", content_params.get("operation", "extract"), formatted_msg, True)
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -766,6 +782,7 @@ async def process_chat(
                 )
 
             _persist_context(formatted_msg, "self_train")
+            _persist_agent("insight_absorber", "self-training", formatted_msg, True)
             return ChatResponse(
                 message=formatted_msg,
                 conversation_id=conversation_id,
@@ -876,6 +893,7 @@ async def process_chat(
                         ))
 
                 _persist_context(formatted_msg, "ad_pipeline")
+                _persist_agent("ad_pipeline_agent", "ad generation", formatted_msg, True)
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
@@ -1005,6 +1023,7 @@ async def process_chat(
                     pass
 
                 _persist_context(formatted_msg, "self_improve")
+                _persist_agent("self_improvement_agent", si_params.get("capability", "improve"), formatted_msg, si_result.success)
                 return ChatResponse(
                     message=formatted_msg,
                     conversation_id=conversation_id,
