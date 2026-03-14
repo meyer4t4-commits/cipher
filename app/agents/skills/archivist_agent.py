@@ -116,6 +116,12 @@ class ArchivistAgent(BaseAgent):
 
     def _initialize_storage(self) -> None:
         """Create necessary data directories if they don't exist."""
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.data_dir = Path("/tmp/cipher_data/archivist")
+            self.index_path = self.data_dir / "index.json"
+            self.embeddings_dir = self.data_dir / "embeddings"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.embeddings_dir.mkdir(parents=True, exist_ok=True)
 

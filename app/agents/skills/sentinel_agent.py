@@ -119,7 +119,11 @@ class SentinelAgent(BaseAgent):
             version="1.0.0",
         )
         self.data_dir = Path("data/sentinel")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.data_dir = Path("/tmp/cipher_data/sentinel")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
         self.alerts_file = self.data_dir / "alerts.json"
         self.predictions_file = self.data_dir / "predictions.json"
         self.drafts_file = self.data_dir / "drafts.json"

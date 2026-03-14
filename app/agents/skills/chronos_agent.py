@@ -94,7 +94,11 @@ class ChronosAgent(BaseAgent):
 
         # Initialize data directory
         self.data_dir = Path("data/chronos")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.data_dir = Path("/tmp/cipher_data/chronos")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Define file paths for persistence
         self.schedule_file = self.data_dir / "schedule.json"

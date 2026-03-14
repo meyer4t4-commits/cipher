@@ -85,7 +85,11 @@ class MonitorAgent(BaseAgent):
         self.active_alerts: list[dict] = []
         self.metrics_history: dict[str, list] = {}
         self.data_dir = Path("data/monitor")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.data_dir = Path("/tmp/cipher_data/monitor")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
         self._uptime_file = self.data_dir / "uptime_log.json"
         self._alerts_file = self.data_dir / "thresholds.json"
         self._load_thresholds()
@@ -472,7 +476,7 @@ class MonitorAgent(BaseAgent):
             }
         except (ImportError, AttributeError):
             # Fallback: read from token log file if it exists
-            token_log = Path("data/token_usage.json")
+            token_log = self.data_dir / "token_usage.json"
             if token_log.exists():
                 try:
                     data = json.loads(token_log.read_text())

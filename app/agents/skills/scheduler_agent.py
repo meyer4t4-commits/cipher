@@ -75,7 +75,12 @@ class SchedulerAgent(BaseAgent):
             ],
         )
         self.data_dir = Path("data/scheduler")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # Railway read-only filesystem fallback
+            self.data_dir = Path("/tmp/cipher_data/scheduler")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
         self._tasks_file = self.data_dir / "scheduled_tasks.json"
         self._history_file = self.data_dir / "task_history.json"
 
