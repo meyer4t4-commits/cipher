@@ -28,7 +28,8 @@ from typing import Optional
 
 import httpx
 
-from app.agents.models import AgentResult, AgentTask, BaseAgent
+from app.agents.base import BaseAgent
+from app.agents.models import AgentCapability, AgentResult, AgentTask
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -180,20 +181,20 @@ class VoiceProvisioningAgent(BaseAgent):
     Searches, generates, saves, auditions, and writes voice_ids.
     """
 
-    name = "voice_provisioning_agent"
-    description = "Provision education voices via ElevenLabs Voice Design API"
-    version = "1.0.0"
-    capabilities = [
-        "provision_all",
-        "provision_one",
-        "search_library",
-        "audition",
-        "status",
-        "list_voices",
-    ]
-
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            name="voice_provisioning_agent",
+            description="Provision education voices via ElevenLabs Voice Design API",
+            version="1.0.0",
+            capabilities=[
+                AgentCapability(name="provision_all", description="Generate + save + write all empty education voices", category="voice", requires_approval=False),
+                AgentCapability(name="provision_one", description="Provision a single voice by name", category="voice", requires_approval=False),
+                AgentCapability(name="search_library", description="Search ElevenLabs shared voice library", category="voice", requires_approval=False),
+                AgentCapability(name="audition", description="Generate TTS sample for a saved voice", category="voice", requires_approval=False),
+                AgentCapability(name="status", description="Check which voices have IDs", category="voice", requires_approval=False),
+                AgentCapability(name="list_voices", description="List all voices in your ElevenLabs account", category="voice", requires_approval=False),
+            ],
+        )
         self.api_key = settings.elevenlabs_api_key or os.environ.get("ELEVENLABS_API_KEY", "")
         self.output_dir = Path("/tmp/cipher_data/voice_provisioning")
         self.output_dir.mkdir(parents=True, exist_ok=True)
