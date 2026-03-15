@@ -190,61 +190,50 @@ class PredictionSwarm:
     async def _gather_perspective(
         self, perspective: SwarmPerspective, scenario: str, timeout: int
     ):
-        """Gather a single perspective from an agent."""
+        """
+        Gather a single perspective using direct LLM call with stance persona.
+        MiroFish-style: each perspective is an LLM reasoning from a different stance,
+        not a full agent execution (agents validate operations which limits flexibility).
+        """
+        import re
         start = time.time()
         stance_config = STANCES[perspective.stance]
 
         try:
-            from app.agents import get_executor, get_registry, AgentTask
-            from app.api.agents import _init_agents
+            from app.services.llm_router import chat_completion
 
-            _init_agents()
-            executor = get_executor()
-            registry = get_registry()
-
-            if not registry.is_registered(perspective.agent_name):
-                perspective.error = f"Agent '{perspective.agent_name}' not registered"
-                return
-
-            instruction = (
+            prompt = (
+                f"You are a {stance_config['label']} analyst (assigned agent: {perspective.agent_name}).\n\n"
                 f"SCENARIO: {scenario}\n\n"
-                f"YOUR ROLE: {stance_config['label']}\n"
                 f"INSTRUCTIONS: {stance_config['instruction']}\n\n"
                 f"Provide your analysis with:\n"
                 f"1. Your position (2-3 sentences)\n"
-                f"2. Key evidence points (bullet list)\n"
-                f"3. Confidence level (0-100%)\n"
-                f"Format as plain text, not JSON."
+                f"2. Key evidence points (3-5 bullet points)\n"
+                f"3. Your confidence level (state as X%)\n\n"
+                f"Be specific and data-driven. Reference real market conditions, rates, and metrics where possible."
             )
 
-            task = AgentTask(
-                agent_name=perspective.agent_name,
-                instruction=instruction,
-                params={"operation": "analyze", "scenario": scenario, "stance": perspective.stance},
-                timeout_seconds=min(timeout, 120),
+            # Use reasoning model for neutral (highest weight), default for others
+            model = "reasoning" if perspective.stance == "neutral" else "default"
+
+            response = await chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model=model,
+                temperature=0.4 if perspective.stance == "neutral" else 0.6,
+                max_tokens=600,
             )
 
-            result = await executor.execute(task, db=None)
-
-            if result.success and result.output:
-                output = str(result.output)
-                perspective.position = output[:1000]
-                # Extract confidence from output if mentioned
-                import re
-                conf_match = re.search(r'(\d{1,3})\s*%', output)
+            content = response.get("content", "")
+            if content:
+                perspective.position = content[:1000]
+                # Extract confidence from output
+                conf_match = re.search(r'(\d{1,3})\s*%', content)
                 if conf_match:
                     perspective.confidence = min(int(conf_match.group(1)) / 100.0, 1.0)
                 else:
                     perspective.confidence = 0.5
-
-                if result.signal:
-                    perspective.confidence = result.signal.confidence
-                    perspective.signal = {
-                        "direction": result.signal.signal.value if result.signal.signal else None,
-                        "risk_level": result.signal.risk_level.value if result.signal.risk_level else None,
-                    }
             else:
-                perspective.error = result.error or "Agent returned no output"
+                perspective.error = "LLM returned empty response"
 
         except Exception as e:
             perspective.error = str(e)
