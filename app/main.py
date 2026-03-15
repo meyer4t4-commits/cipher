@@ -143,8 +143,50 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Scanner failed to start (non-fatal): {e}")
 
+    # ── Start Cron Registry with agent executor wired ──
+    try:
+        from app.services.cron_registry import get_cron_registry
+        from app.agents import get_executor, get_registry, AgentTask
+        from app.api.agents import _init_agents
+
+        _init_agents()
+        _agent_executor = get_executor()
+        _agent_registry = get_registry()
+
+        async def _cron_execute_agent(agent_name: str, operation: str, params: dict):
+            """Bridge between cron registry and agent executor."""
+            if not _agent_registry.is_registered(agent_name):
+                raise ValueError(f"Agent '{agent_name}' not registered")
+            task = AgentTask(
+                agent_name=agent_name,
+                instruction=f"[CRON] Execute operation: {operation}",
+                params={"operation": operation, **params},
+                timeout_seconds=300,
+            )
+            result = await _agent_executor.execute(task, db=None)
+            return {
+                "success": result.success,
+                "output": result.output[:500] if result.output else None,
+                "error": result.error,
+                "execution_time_ms": result.execution_time_ms,
+            }
+
+        cron_registry = get_cron_registry()
+        cron_registry.set_executor(_cron_execute_agent)
+        await cron_registry.start()
+        logger.info(f"Cron registry started: {len(cron_registry._tasks)} tasks, executor wired")
+    except Exception as e:
+        logger.warning(f"Cron registry failed to start (non-fatal): {e}")
+
     yield
     logger.info("Cipher shutting down")
+
+    # Stop cron registry on shutdown
+    try:
+        cron_reg = get_cron_registry()
+        await cron_reg.stop()
+    except Exception:
+        pass
 
     # Stop scanner on shutdown
     await stop_scanner()

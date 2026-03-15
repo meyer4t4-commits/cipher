@@ -113,7 +113,7 @@ def next_cron_time(cron_expr: str, after: Optional[datetime] = None) -> datetime
         if (
             candidate.month in months
             and candidate.day in days
-            and candidate.weekday() in weekdays  # Python: Mon=0, Sun=6
+            and (candidate.weekday() + 1) % 7 in weekdays  # Convert Python Mon=0 → cron Sun=0
             and candidate.hour in hours
             and candidate.minute in minutes
         ):
@@ -134,11 +134,9 @@ class CronRegistry:
         self._state_file.parent.mkdir(parents=True, exist_ok=True)
         self._executor_callback: Optional[Callable] = None
 
-        # Load persisted state
-        self._load_state()
-
-        # Register default tasks
+        # Register default tasks first, then overlay persisted state
         self._register_defaults()
+        self._load_state()
 
         logger.info(f"CronRegistry initialized with {len(self._tasks)} tasks")
 
