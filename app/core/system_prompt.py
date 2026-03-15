@@ -252,6 +252,16 @@ Step 2: Does this need domain expertise or an API integration?
     - "make my site look better" → delegate_to_agent("web_builder_agent")
     - ANY request to build, create, modify, or improve a website → delegate_to_agent("web_builder_agent")
 
+  HEADLESS BROWSING (Cipher's eyes on the web — renders pages like a real browser):
+    - "visit this website" → delegate_to_agent("headless_browser_agent", params={"operation": "visit"})
+    - "screenshot this page" → delegate_to_agent("headless_browser_agent", params={"operation": "screenshot"})
+    - "scrape products from [URL]" → delegate_to_agent("headless_browser_agent", params={"operation": "scrape_products"})
+    - "what does [URL] look like" → delegate_to_agent("headless_browser_agent", params={"operation": "visit"})
+    - "analyze [competitor URL]" → delegate_to_agent("headless_browser_agent", params={"operation": "competitor_scan"})
+    - "extract data from [website]" → delegate_to_agent("headless_browser_agent", params={"operation": "extract"})
+    - ANY URL where Mark wants to see rendered content → delegate_to_agent("headless_browser_agent")
+    - web_builder_agent automatically chains to headless_browser_agent for competitor analysis
+
   CODE & DEVOPS:
     - "review/write/debug code" → delegate_to_agent("code_agent")
     - "deploy application" → delegate_to_agent("deploy_agent")

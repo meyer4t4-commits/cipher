@@ -36,6 +36,7 @@ from app.agents.skills.ad_pipeline_agent import AdPipelineAgent
 from app.agents.skills.self_improvement_agent import SelfImprovementAgent
 from app.agents.skills.swarm_agent import SwarmAgent
 from app.agents.skills.web_builder_agent import WebBuilderAgent
+from app.agents.skills.headless_browser_agent import HeadlessBrowserAgent
 from app.agents.skills.new_agent import NewAgent
 
 __all__ = [
@@ -73,5 +74,6 @@ __all__ = [
     "SelfImprovementAgent",
     "SwarmAgent",
     "WebBuilderAgent",
+    "HeadlessBrowserAgent",
     "NewAgent",
 ]

@@ -474,20 +474,34 @@ Output ONLY the complete HTML file. Start with <!DOCTYPE html>."""
 
         await self.emit_progress(f"Analyzing competitor: {competitor_url or 'from description'}...")
 
-        # Try to scrape competitor if URL provided
+        # Try to scrape competitor — prefer headless browser (JS-rendered) over raw HTTP
         competitor_content = ""
         if competitor_url:
             try:
-                result = await self.invoke_agent(
-                    "web_agent",
-                    f"Scrape this website and extract all visible text, layout structure, and design elements: {competitor_url}",
-                    params={"operation": "scrape_html", "url": competitor_url},
-                    timeout=30,
+                from app.services.headless_browser import visit_page
+                browser_result = await visit_page(
+                    url=competitor_url,
+                    extract_text=True,
+                    extract_links=True,
+                    scroll_to_bottom=True,
                 )
-                if result.success and result.output:
-                    competitor_content = str(result.output)[:5000]
+                if browser_result.success:
+                    competitor_content = browser_result.text[:5000]
+                    if browser_result.metadata:
+                        competitor_content += f"\n\nMETADATA: {json.dumps(browser_result.metadata)}"
             except Exception as e:
-                logger.warning(f"[web_builder] Competitor scrape failed: {e}")
+                logger.warning(f"[web_builder] Headless browser scrape failed, trying web_agent: {e}")
+                try:
+                    result = await self.invoke_agent(
+                        "web_agent",
+                        f"Scrape this website: {competitor_url}",
+                        params={"operation": "scrape_html", "url": competitor_url},
+                        timeout=30,
+                    )
+                    if result.success and result.output:
+                        competitor_content = str(result.output)[:5000]
+                except Exception as e2:
+                    logger.warning(f"[web_builder] web_agent fallback also failed: {e2}")
 
         competitor_desc = task.params.get("description", "") or competitor_content
 

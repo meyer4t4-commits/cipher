@@ -74,6 +74,7 @@ def _init_agents():
         VideoAgent,
         WebAgent,
         WebBuilderAgent,
+        HeadlessBrowserAgent,
     )
 
     # Register all skill agents
@@ -112,6 +113,7 @@ def _init_agents():
         SelfImprovementAgent(),
         SwarmAgent(),
         WebBuilderAgent(),
+        HeadlessBrowserAgent(),
     ]
 
     for agent in agents:

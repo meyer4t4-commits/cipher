@@ -20,14 +20,20 @@ RUN groupadd -r cipher && useradd -r -g cipher -d /app -s /sbin/nologin cipher
 
 WORKDIR /app
 
-# System deps — minimal (no Playwright/Chromium to save ~300MB RAM)
+# System deps — Playwright Chromium for headless browsing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxcomposite1 \
+    libxrandr2 libxdamage1 libpango-1.0-0 libcairo2 libasound2 \
+    libgbm1 libgtk-3-0 libxshmfence1 libx11-xcb1 fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # Copy Python packages from builder stage
 COPY --from=builder /install /usr/local
+
+# Install Playwright Chromium (only chromium to save space, ~130MB)
+RUN playwright install chromium 2>/dev/null || echo "Playwright chromium install deferred"
 
 # Copy application
 COPY --chown=cipher:cipher app/ ./app/

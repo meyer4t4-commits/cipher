@@ -28,6 +28,9 @@ aiohttp>=3.9.0
 # Web scraping
 beautifulsoup4>=4.12.0
 
+# Headless browser (lazy-loaded — Chromium installed in Dockerfile)
+playwright>=1.40.0
+
 # Telegram
 python-telegram-bot>=21.9
 
