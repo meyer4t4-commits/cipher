@@ -114,7 +114,7 @@ class SentinelAgent(BaseAgent):
     def __init__(self):
         """Initialize Sentinel Agent with capabilities."""
         super().__init__(
-            name="sentinel",
+            name="sentinel_agent",
             description="Proactive alerts — monitors email/SMS, predicts needs, generates prioritized action digests",
             version="1.0.0",
         )

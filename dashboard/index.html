@@ -324,7 +324,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="input-disclaimer" id="disclaimer">Cipher orchestrates 29 agents across 6 divisions. Agents self-deploy as needed.</div>
+                        <div class="input-disclaimer" id="disclaimer">Cipher orchestrates <span id="footerAgentCount">...</span> agents across 6 divisions. Agents self-deploy as needed.</div>
                     </div>
                 </div>
             </div>
@@ -606,6 +606,7 @@
         }catch(e){}
         $('agentSubtitle').textContent=S.agents.length+' agents · '+S.approvals.length+' pending';
         $('agentCount').textContent=S.agents.length;
+        var fc=$('footerAgentCount'); if(fc) fc.textContent=S.agents.length;
         renderAgentTab();
     }
     function switchAgentTab(tab){S.agentTab=tab;document.querySelectorAll('#viewAgents .panel-tab').forEach(function(t,i){t.classList.toggle('active',['list','history','approvals'][i]===tab)});renderAgentTab()}
