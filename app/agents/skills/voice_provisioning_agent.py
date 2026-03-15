@@ -321,7 +321,7 @@ class VoiceProvisioningAgent(BaseAgent):
 
     def _write_voice_id(self, name: str, voice_id: str) -> bool:
         """Write a voice_id into voice_personalities.py."""
-        vp_path = PROJECT_ROOT / "app" / "services" / "voice_personalities.py"
+        vp_path = PROJECT_ROOT / "services" / "voice_personalities.py"
         content = vp_path.read_text()
 
         idx = content.find(f'voice_name="{name}"')
@@ -354,7 +354,7 @@ class VoiceProvisioningAgent(BaseAgent):
 
     def _get_current_status(self) -> dict:
         """Check which education voices have IDs and which are empty."""
-        vp_path = PROJECT_ROOT / "app" / "services" / "voice_personalities.py"
+        vp_path = PROJECT_ROOT / "services" / "voice_personalities.py"
         content = vp_path.read_text()
 
         status = {}
