@@ -279,6 +279,7 @@
                 <button class="nav-tab" data-view="dashboard" onclick="switchView('dashboard')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dash</button>
                 <button class="nav-tab" data-view="agents" onclick="switchView('agents')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 0-4 4c0 2.5 4 4 4 4s4-1.5 4-4a4 4 0 0 0-4-4z"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>Agents</button>
                 <button class="nav-tab" data-view="cron" onclick="switchView('cron')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Cron</button>
+                <button class="nav-tab" data-view="swarm" onclick="switchView('swarm')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><circle cx="12" cy="12" r="3"/><circle cx="6" cy="8" r="1.5"/><circle cx="18" cy="8" r="1.5"/><circle cx="6" cy="16" r="1.5"/><circle cx="18" cy="16" r="1.5"/></svg>Swarm</button>
             </div>
             <div class="conv-list" id="convList"></div>
             <div class="sidebar-footer">
@@ -347,6 +348,17 @@
                 <div class="panel-header"><div><h2>Scheduled Tasks</h2><div class="subtitle" id="cronSubtitle">Loading...</div></div><div style="display:flex;gap:8px"><button class="icon-btn" onclick="loadCronTasks()"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button><button class="btn btn-accent" onclick="openCreateTask()"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:14px;height:14px;margin-right:4px"><path d="M12 5v14M5 12h14"/></svg>New Task</button></div></div>
                 <div class="panel-body" id="cronContent"></div>
             </div>
+
+            <!-- Swarm Intelligence View -->
+            <div class="panel" id="viewSwarm">
+                <div class="panel-header"><div><h2>Swarm Intelligence</h2><div class="subtitle" id="swarmSubtitle">Prediction · Knowledge Graph · Agent Memory</div></div><button class="icon-btn" onclick="loadSwarm()"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button></div>
+                <div class="panel-tabs">
+                    <button class="panel-tab active" onclick="switchSwarmTab('predict')">Predict</button>
+                    <button class="panel-tab" onclick="switchSwarmTab('graph')">Knowledge Graph</button>
+                    <button class="panel-tab" onclick="switchSwarmTab('memory')">Agent Memory</button>
+                </div>
+                <div class="panel-body" id="swarmContent"></div>
+            </div>
         </div>
     </div>
 
@@ -395,13 +407,14 @@
     function switchView(view) {
         S.view = view;
         document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.view===view)});
-        ['chat','dashboard','agents','cron'].forEach(function(v){
+        ['chat','dashboard','agents','cron','swarm'].forEach(function(v){
             var el = $('view'+v.charAt(0).toUpperCase()+v.slice(1));
             if(el) el.classList.toggle('active',v===view);
         });
         if(view==='dashboard') loadDashboard();
         if(view==='agents') loadAgents();
         if(view==='cron') loadCronTasks();
+        if(view==='swarm') loadSwarm();
     }
 
     // ── CONVERSATIONS ──
@@ -711,6 +724,83 @@
     function formatTime(iso){if(!iso)return'Never';var d=new Date(iso),now=new Date(),diff=d-now;if(Math.abs(diff)<6e4)return'Just now';if(diff>0){var m=Math.floor(diff/6e4);if(m<60)return'in '+m+'m';var h=Math.floor(m/60);if(h<24)return'in '+h+'h';return'in '+Math.floor(h/24)+'d'}var ago=Math.abs(diff),m2=Math.floor(ago/6e4);if(m2<60)return m2+'m ago';var h2=Math.floor(m2/60);if(h2<24)return h2+'h ago';return Math.floor(h2/24)+'d ago'}
     function timeAgo(iso){if(!iso)return'';var diff=Date.now()-new Date(iso);var m=Math.floor(diff/6e4);if(m<1)return'now';if(m<60)return m+'m ago';var h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'}
     function toggleSettings(){/* TODO: settings panel */}
+
+    // ── SWARM INTELLIGENCE ──
+    var swarmTab = 'predict';
+    function switchSwarmTab(tab){
+        swarmTab=tab;
+        document.querySelectorAll('#viewSwarm .panel-tab').forEach(function(t,i){t.classList.toggle('active',['predict','graph','memory'][i]===tab)});
+        renderSwarmTab();
+    }
+    async function loadSwarm(){renderSwarmTab()}
+    function renderSwarmTab(){
+        var el=$('swarmContent'); if(!el) return;
+        if(swarmTab==='predict') renderSwarmPredict(el);
+        else if(swarmTab==='graph') renderSwarmGraph(el);
+        else if(swarmTab==='memory') renderSwarmMemory(el);
+    }
+    function renderSwarmPredict(el){
+        el.innerHTML='<div style="padding:16px"><div class="card" style="padding:16px;margin-bottom:16px"><h3 style="margin:0 0 8px">Prediction Swarm</h3><p style="color:var(--text-dim);margin:0 0 12px;font-size:13px">Multi-agent debate with consensus scoring. Enter a scenario and Cipher\'s agents will analyze it from 4 perspectives.</p><textarea id="swarmScenario" class="search-input" style="width:100%;min-height:80px;resize:vertical;margin-bottom:8px;font-family:inherit" placeholder="e.g. Should I invest in this property at 123 Main St for $280,000?"></textarea><div style="display:flex;gap:8px;align-items:center"><button class="btn btn-accent" id="swarmRunBtn" onclick="runSwarmPredict()">Run Prediction Swarm</button><span id="swarmStatus" style="font-size:12px;color:var(--text-dim)"></span></div></div><div id="swarmResults"></div></div>';
+    }
+    async function runSwarmPredict(){
+        var scenario=$('swarmScenario')?.value?.trim();if(!scenario){showToast('Enter a scenario','error');return}
+        var btn=$('swarmRunBtn');btn.textContent='Running...';btn.disabled=true;$('swarmStatus').textContent='Spawning perspectives...';
+        try{
+            var r=await fetch(API+'/swarm/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario:scenario,agents:['research_agent','synthesis_agent'],timeout:120})});
+            var d=await r.json();
+            var html='<div class="card" style="padding:16px;margin-bottom:12px;border-left:3px solid var(--accent)"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>Consensus</strong><span class="card-status '+(d.confidence>0.6?'active':'error')+'">'+Math.round((d.confidence||0)*100)+'% confidence</span></div><p style="margin:0 0 8px">'+((d.consensus||'').replace(/</g,'&lt;'))+'</p><div style="display:flex;gap:16px;font-size:12px;color:var(--text-dim)"><span>Risk: <strong>'+(d.risk_level||'?')+'</strong></span><span>Time: '+Math.round(d.total_time_ms||0)+'ms</span></div></div>';
+            html+='<div style="font-weight:600;margin:12px 0 8px;color:var(--text-dim)">Recommendation</div><div class="card" style="padding:12px;margin-bottom:16px">'+((d.recommendation||'').replace(/</g,'&lt;'))+'</div>';
+            if(d.perspectives&&d.perspectives.length){
+                html+='<div style="font-weight:600;margin:12px 0 8px;color:var(--text-dim)">Perspectives</div>';
+                d.perspectives.forEach(function(p){
+                    var color=p.stance==='optimistic'?'var(--success)':p.stance==='conservative'?'var(--danger)':p.stance==='adversarial'?'#ff9800':'var(--accent)';
+                    html+='<div class="card" style="padding:12px;margin-bottom:8px;border-left:3px solid '+color+'"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><strong>'+((p.label||p.stance).replace(/</g,'&lt;'))+'</strong><span style="font-size:12px;color:var(--text-dim)">'+p.agent_name+'</span></div><p style="margin:0;font-size:13px;white-space:pre-wrap">'+((p.position||p.error||'No output').replace(/</g,'&lt;').slice(0,500))+'</p></div>';
+                });
+            }
+            if(d.dissent&&d.dissent.length){html+='<div style="margin-top:12px;padding:8px 12px;background:rgba(255,152,0,0.1);border-radius:8px;font-size:12px;color:#ff9800"><strong>Dissent:</strong> '+d.dissent.join(', ')+'</div>'}
+            $('swarmResults').innerHTML=html;
+            showToast('Prediction complete','success');
+        }catch(e){showToast('Swarm failed: '+e.message,'error')}
+        btn.textContent='Run Prediction Swarm';btn.disabled=false;$('swarmStatus').textContent='';
+    }
+    async function renderSwarmGraph(el){
+        el.innerHTML='<div style="padding:16px"><div class="card" style="padding:16px;margin-bottom:16px"><h3 style="margin:0 0 8px">Knowledge Graph</h3><p style="color:var(--text-dim);margin:0 0 12px;font-size:13px">Entities and relationships discovered by Cipher\'s agents.</p></div><div id="graphStats">Loading...</div></div>';
+        try{
+            var r=await fetch(API+'/swarm/graph/stats');var d=await r.json();
+            var html='<div class="stat-row"><span class="stat-label">Entities</span><span class="stat-value">'+(d.total_entities||0)+'</span></div>';
+            html+='<div class="stat-row"><span class="stat-label">Relations</span><span class="stat-value">'+(d.total_relations||0)+'</span></div>';
+            if(d.entity_types){var types=Object.entries(d.entity_types).map(function(e){return e[0]+': '+e[1]}).join(', ');html+='<div class="stat-row"><span class="stat-label">Types</span><span class="stat-value" style="font-size:12px">'+types+'</span></div>'}
+            if(d.top_entities&&d.top_entities.length){
+                html+='<div style="font-weight:600;margin:16px 0 8px;color:var(--text-dim)">Top Entities</div>';
+                d.top_entities.forEach(function(e){html+='<div class="card" style="padding:8px 12px;margin-bottom:4px"><span>'+e.name+'</span><span style="float:right;font-size:12px;color:var(--text-dim)">'+e.type+' · '+e.mentions+' mentions</span></div>'});
+            }
+            html+='<div style="margin-top:16px"><textarea id="graphExtractText" class="search-input" style="width:100%;min-height:60px;resize:vertical;margin-bottom:8px" placeholder="Paste text to extract entities from..."></textarea><button class="btn btn-accent" onclick="extractToGraph()">Extract Entities</button><span id="graphExtractStatus" style="margin-left:8px;font-size:12px;color:var(--text-dim)"></span></div>';
+            $('graphStats').innerHTML=html;
+        }catch(e){$('graphStats').innerHTML='<div style="color:var(--danger)">Failed to load: '+e.message+'</div>'}
+    }
+    async function extractToGraph(){
+        var text=$('graphExtractText')?.value?.trim();if(!text){showToast('Enter text to extract from','error');return}
+        $('graphExtractStatus').textContent='Extracting...';
+        try{var r=await fetch(API+'/swarm/graph/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});var d=await r.json();$('graphExtractStatus').textContent=(d.entities_added||0)+' entities, '+(d.relations_added||0)+' relations added';renderSwarmGraph($('swarmContent'));showToast('Extracted '+d.entities_added+' entities','success')}catch(e){$('graphExtractStatus').textContent='Failed';showToast('Extraction failed','error')}
+    }
+    async function renderSwarmMemory(el){
+        el.innerHTML='<div style="padding:16px"><div class="card" style="padding:16px;margin-bottom:16px"><h3 style="margin:0 0 8px">Agent Memory</h3><p style="color:var(--text-dim);margin:0 0 12px;font-size:13px">Persistent per-agent memory — agents remember across executions.</p></div><div id="memoryStats">Loading...</div></div>';
+        try{
+            var r=await fetch(API+'/swarm/memory/stats');var d=await r.json();
+            var html='<div class="stat-row"><span class="stat-label">Agents with Memory</span><span class="stat-value">'+(d.total_agents_with_memory||0)+'</span></div>';
+            if(d.agents&&d.agents.length){
+                d.agents.forEach(function(a){
+                    html+='<div class="card" style="padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between"><strong>'+a.agent_name+'</strong><span style="font-size:12px;color:var(--text-dim)">'+a.total_memories+' memories</span></div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">Types: '+JSON.stringify(a.types||{}).replace(/[{}"]/g,'')+'</div></div>';
+                });
+            } else { html+='<div style="color:var(--text-dim);text-align:center;padding:24px">No agent memories yet. Memories build as agents execute tasks.</div>'}
+            html+='<div style="margin-top:16px"><button class="btn btn-accent" onclick="consolidateMemories()">Consolidate All Memories</button><span id="consolidateStatus" style="margin-left:8px;font-size:12px;color:var(--text-dim)"></span></div>';
+            $('memoryStats').innerHTML=html;
+        }catch(e){$('memoryStats').innerHTML='<div style="color:var(--danger)">Failed to load: '+e.message+'</div>'}
+    }
+    async function consolidateMemories(){
+        $('consolidateStatus').textContent='Consolidating...';
+        try{var r=await fetch(API+'/swarm/memory/consolidate',{method:'POST'});var d=await r.json();$('consolidateStatus').textContent=(d.total_patterns_created||0)+' patterns created';showToast('Consolidation complete','success');renderSwarmMemory($('swarmContent'))}catch(e){$('consolidateStatus').textContent='Failed';showToast('Failed','error')}
+    }
 
     // ── EVENTS ──
     $('msgInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});

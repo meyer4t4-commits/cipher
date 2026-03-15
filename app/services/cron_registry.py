@@ -363,6 +363,28 @@ class CronRegistry:
             description="Check if user is idle and run self-improvement training",
         ))
 
+        # === SWARM: MEMORY CONSOLIDATION — Daily 3 AM ===
+        self.register(CronTask(
+            task_id="swarm-memory-consolidate",
+            name="Agent Memory Consolidation",
+            cron_expression="0 3 * * *",
+            agent_name="swarm_agent",
+            operation="memory_consolidate",
+            params={},
+            description="Consolidate agent memories into patterns — merges repeated observations",
+        ))
+
+        # === SWARM: KNOWLEDGE GRAPH STATS — Daily 6 AM ===
+        self.register(CronTask(
+            task_id="swarm-graph-maintenance",
+            name="Knowledge Graph Maintenance",
+            cron_expression="0 6 * * *",
+            agent_name="swarm_agent",
+            operation="graph_stats",
+            params={},
+            description="Check knowledge graph health and compile statistics",
+        ))
+
     def register(self, task: CronTask) -> None:
         """Register a cron task (won't overwrite existing unless forced)."""
         if task.task_id not in self._tasks:
