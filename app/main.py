@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI):
             result = await _agent_executor.execute(task, db=None)
             return {
                 "success": result.success,
-                "output": result.output[:500] if result.output else None,
+                "output": str(result.output)[:500] if result.output else None,
                 "error": result.error,
                 "execution_time_ms": result.execution_time_ms,
             }
