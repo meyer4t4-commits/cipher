@@ -38,6 +38,9 @@ class ChatMessage(BaseModel):
     role: Role
     content: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now())
+    model_used: str | None = None
+    tokens_used: int | None = None
+    cost_usd: float | None = None
 
 
 class ChatRequest(BaseModel):

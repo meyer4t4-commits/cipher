@@ -275,13 +275,105 @@ async def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
         id=conv.id,
         title=conv.title,
         messages=[
-            ChatMessage(role=Role(msg.role), content=msg.content, timestamp=msg.created_at)
+            ChatMessage(
+                role=Role(msg.role),
+                content=msg.content,
+                timestamp=msg.created_at,
+                model_used=getattr(msg, 'model_used', None),
+                tokens_used=getattr(msg, 'tokens_used', None),
+                cost_usd=getattr(msg, 'cost_usd', None),
+            )
             for msg in messages
         ],
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         message_count=len(messages),
     )
+
+
+@router.put("/conversations/{conversation_id}")
+async def update_conversation(
+    conversation_id: str,
+    body: dict,
+    db: Session = Depends(get_db),
+):
+    """Update a conversation (rename title, etc.)."""
+    conv = db.query(ConversationRecord).filter_by(id=conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if "title" in body:
+        conv.title = body["title"][:200]  # Cap title length
+    db.commit()
+    db.refresh(conv)
+
+    return {"status": "updated", "conversation_id": conversation_id, "title": conv.title}
+
+
+@router.get("/conversations/search")
+async def search_conversations(
+    q: str = "",
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
+    """Search conversations by title and message content."""
+    if not q.strip():
+        return {"results": [], "query": q}
+
+    query_lower = f"%{q.lower()}%"
+
+    # Search in conversation titles
+    title_matches = (
+        db.query(ConversationRecord)
+        .filter(ConversationRecord.title.ilike(query_lower))
+        .order_by(ConversationRecord.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    # Search in message content
+    message_matches = (
+        db.query(MessageRecord)
+        .filter(MessageRecord.content.ilike(query_lower))
+        .order_by(MessageRecord.created_at.desc())
+        .limit(limit * 2)
+        .all()
+    )
+
+    # Combine unique conversation IDs
+    seen_ids = set()
+    results = []
+
+    for conv in title_matches:
+        if conv.id not in seen_ids:
+            seen_ids.add(conv.id)
+            msg_count = db.query(MessageRecord).filter_by(conversation_id=conv.id).count()
+            results.append({
+                "conversation_id": conv.id,
+                "title": conv.title,
+                "match_type": "title",
+                "message_count": msg_count,
+                "updated_at": conv.updated_at.isoformat(),
+            })
+
+    for msg in message_matches:
+        if msg.conversation_id not in seen_ids:
+            seen_ids.add(msg.conversation_id)
+            conv = db.query(ConversationRecord).filter_by(id=msg.conversation_id).first()
+            if conv:
+                msg_count = db.query(MessageRecord).filter_by(conversation_id=conv.id).count()
+                # Get a snippet of the matching message
+                snippet = msg.content[:150]
+                results.append({
+                    "conversation_id": conv.id,
+                    "title": conv.title,
+                    "match_type": "content",
+                    "snippet": snippet,
+                    "message_count": msg_count,
+                    "updated_at": conv.updated_at.isoformat(),
+                })
+
+    return {"results": results[:limit], "query": q, "total": len(results)}
 
 
 @router.delete("/conversations/{conversation_id}")
