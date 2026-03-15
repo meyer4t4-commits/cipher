@@ -11,11 +11,15 @@ logging, and type safety.
 import json
 import stripe
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.db.database import SessionLocal
 
 
 # ============================================================================
@@ -324,6 +328,61 @@ def handle_webhook(payload: bytes, sig_header: str) -> Dict[str, Any]:
         raise
 
 
+def _update_account_tier(customer_id: str, tier: str, subscription_id: Optional[str] = None) -> bool:
+    """
+    Update an ElysianAccount's tier based on Stripe customer ID.
+    Also syncs the per-tier resource limits into the account record.
+
+    Returns True if the account was found and updated.
+    """
+    from app.gateway.models import ElysianAccount, TIER_LIMITS, SubscriptionTier as GWTier
+
+    db: Session = SessionLocal()
+    try:
+        account = db.query(ElysianAccount).filter(
+            ElysianAccount.stripe_customer_id == customer_id
+        ).first()
+
+        if not account:
+            logger.warning(f"No account found for stripe_customer_id={customer_id}")
+            return False
+
+        account.tier = tier
+        if subscription_id:
+            account.stripe_subscription_id = subscription_id
+
+        # Sync resource limits from TIER_LIMITS
+        try:
+            tier_enum = GWTier(tier)
+            limits = TIER_LIMITS.get(tier_enum, {})
+            if limits:
+                account.monthly_token_limit = limits.get("monthly_tokens", account.monthly_token_limit)
+                account.monthly_request_limit = limits.get("monthly_requests", account.monthly_request_limit)
+                account.daily_scanner_scans = limits.get("daily_scans", 0)
+                account.voice_minutes_limit = limits.get("voice_minutes", 15)
+
+                # Update API key permissions
+                from app.gateway.models import KeyStatus
+                for key in account.api_keys:
+                    if key.status == KeyStatus.ACTIVE.value:
+                        key.can_scan = bool(limits.get("evolution_scanner"))
+                        key.can_voice = bool(limits.get("situational_voices", 0))
+                        key.can_cascade = bool(limits.get("cascade_routing"))
+                        key.can_clone_voice = bool(limits.get("voice_cloning"))
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Could not sync tier limits for {tier}: {e}")
+
+        db.commit()
+        logger.info(f"Account {account.id[:8]}... tier updated to {tier}")
+        return True
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update account tier: {e}")
+        return False
+    finally:
+        db.close()
+
+
 def _handle_subscription_created(data: Dict[str, Any]) -> None:
     """
     Handle customer.subscription.created webhook event.
@@ -345,7 +404,8 @@ def _handle_subscription_created(data: Dict[str, Any]) -> None:
                 "tier": tier,
             },
         )
-        # TODO: Update user.tier in database
+        if tier:
+            _update_account_tier(customer_id, tier, subscription_id)
 
 
 def _handle_subscription_updated(data: Dict[str, Any]) -> None:
@@ -365,11 +425,12 @@ def _handle_subscription_updated(data: Dict[str, Any]) -> None:
                 "tier": tier,
             },
         )
-        # TODO: Update user.tier in database
+        if tier:
+            _update_account_tier(customer_id, tier, subscription_id)
 
 
 def _handle_subscription_deleted(data: Dict[str, Any]) -> None:
-    """Handle customer.subscription.deleted webhook event."""
+    """Handle customer.subscription.deleted webhook event — downgrade to FREE."""
     customer_id = data.get("customer")
     subscription_id = data.get("id")
     logger.info(
@@ -379,7 +440,7 @@ def _handle_subscription_deleted(data: Dict[str, Any]) -> None:
             "subscription_id": subscription_id,
         },
     )
-    # TODO: Downgrade user to FREE tier
+    _update_account_tier(customer_id, SubscriptionTier.FREE.value)
 
 
 def _handle_payment_succeeded(data: Dict[str, Any]) -> None:
@@ -398,7 +459,11 @@ def _handle_payment_succeeded(data: Dict[str, Any]) -> None:
 
 
 def _handle_payment_failed(data: Dict[str, Any]) -> None:
-    """Handle invoice.payment_failed webhook event."""
+    """Handle invoice.payment_failed webhook event.
+
+    Logs warning and records a payment_failed usage event for the account
+    so the notification system can pick it up.
+    """
     customer_id = data.get("customer")
     invoice_id = data.get("id")
     logger.warning(
@@ -408,7 +473,30 @@ def _handle_payment_failed(data: Dict[str, Any]) -> None:
             "invoice_id": invoice_id,
         },
     )
-    # TODO: Send user notification about failed payment
+
+    # Record payment failure event so notification service can alert the user
+    from app.gateway.models import ElysianAccount, ElysianUsage
+    db: Session = SessionLocal()
+    try:
+        account = db.query(ElysianAccount).filter(
+            ElysianAccount.stripe_customer_id == customer_id
+        ).first()
+        if account:
+            now = datetime.now(timezone.utc)
+            failure_record = ElysianUsage(
+                account_id=account.id,
+                feature="payment_failed",
+                billing_month=now.strftime("%Y-%m"),
+                cost_usd=0.0,
+            )
+            db.add(failure_record)
+            db.commit()
+            logger.info(f"Payment failure recorded for account {account.id[:8]}...")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to record payment failure: {e}")
+    finally:
+        db.close()
 
 
 def _get_tier_from_price_id(price_id: str) -> Optional[str]:
@@ -435,8 +523,11 @@ def get_user_tier(user_id: str) -> Dict[str, Any]:
     """
     Get the current subscription tier and limits for a user.
 
+    Queries the ElysianAccount table by user_id (tries both Elysian account ID
+    and legacy User.id). Falls back to FREE tier if no account found.
+
     Args:
-        user_id: The user's ID
+        user_id: The user's ID (ElysianAccount.id or User.id)
 
     Returns:
         Dictionary containing:
@@ -445,17 +536,52 @@ def get_user_tier(user_id: str) -> Dict[str, Any]:
             - limits: Dictionary of resource limits for this tier
             - price: Price in cents (0 for free tier)
             - next_billing_date: Datetime of next billing (None for free tier)
-
-    Note:
-        In a real implementation, this would query the database.
-        Current implementation returns default tier.
     """
     try:
-        # TODO: Query database for user.tier
-        # For now, default to FREE tier
+        from app.gateway.models import ElysianAccount
+
+        db: Session = SessionLocal()
+        try:
+            # Try finding by ElysianAccount ID first
+            account = db.query(ElysianAccount).filter(
+                ElysianAccount.id == user_id
+            ).first()
+
+            # Fallback: try by email if user_id looks like a numeric legacy ID
+            if not account and user_id.isdigit():
+                from app.db.models import User
+                user = db.query(User).filter(User.id == int(user_id)).first()
+                if user and hasattr(user, "username"):
+                    account = db.query(ElysianAccount).filter(
+                        ElysianAccount.email == user.username
+                    ).first()
+
+            if account:
+                tier = SubscriptionTier(account.tier)
+                tier_config = TIER_CONFIG[tier]
+
+                # Calculate next billing date from Stripe if available
+                next_billing = None
+                if account.stripe_subscription_id:
+                    # Approximate: 30 days from last update
+                    if account.updated_at:
+                        next_billing = account.updated_at + timedelta(days=30)
+
+                return {
+                    "tier": tier.value,
+                    "name": tier_config["name"],
+                    "limits": tier_config["limits"].copy(),
+                    "price": tier_config["price"],
+                    "next_billing_date": next_billing,
+                    "user_id": user_id,
+                    "stripe_customer_id": account.stripe_customer_id,
+                }
+        finally:
+            db.close()
+
+        # No account found — default to FREE
         tier = SubscriptionTier.FREE
         tier_config = TIER_CONFIG[tier]
-
         return {
             "tier": tier.value,
             "name": tier_config["name"],
@@ -542,9 +668,47 @@ def check_usage(
                 "over_limit": 0,
             }
 
-        # TODO: Query database for current usage
-        # For now, assume 0 usage
+        # Query actual usage from ElysianUsage table for current billing month
         current_usage = 0
+        try:
+            from app.gateway.models import ElysianAccount, ElysianUsage
+
+            db: Session = SessionLocal()
+            try:
+                now = datetime.now(timezone.utc)
+                billing_month = now.strftime("%Y-%m")
+
+                # Map resource names to ElysianUsage feature/column
+                resource_map = {
+                    "tokens": ("chat", "total_tokens"),
+                    "conversations": ("chat", "request_count"),
+                    "voice_minutes": ("voice", "voice_seconds"),
+                }
+
+                if resource in resource_map:
+                    feature, column_name = resource_map[resource]
+
+                    # Find account by user_id
+                    account = db.query(ElysianAccount).filter(
+                        ElysianAccount.id == user_id
+                    ).first()
+
+                    if account:
+                        col = getattr(ElysianUsage, column_name)
+                        result = db.query(func.coalesce(func.sum(col), 0)).filter(
+                            ElysianUsage.account_id == account.id,
+                            ElysianUsage.feature == feature,
+                            ElysianUsage.billing_month == billing_month,
+                        ).scalar()
+                        current_usage = result or 0
+
+                        # voice_seconds → voice_minutes conversion
+                        if resource == "voice_minutes" and current_usage > 0:
+                            current_usage = current_usage // 60
+            finally:
+                db.close()
+        except Exception as db_err:
+            logger.debug(f"Usage query fell back to 0: {db_err}")
 
         remaining = limit - current_usage
         allowed = (current_usage + amount) <= limit
@@ -604,20 +768,33 @@ def get_upgrade_nudge(user_id: str) -> Optional[str]:
         if current_tier == SubscriptionTier.ENTERPRISE.value:
             return None
 
-        # Check usage levels for nudges
+        # Check usage levels for contextual nudges
         token_check = check_usage(user_id, "tokens", 0)
         voice_check = check_usage(user_id, "voice_minutes", 0)
 
-        # TODO: Query database for actual usage
-        # For now, return generic nudges based on tier
-
+        # Usage-aware nudges — trigger when approaching limits
         if current_tier == SubscriptionTier.FREE.value:
+            if token_check.get("remaining") is not None and token_check["remaining"] < 20_000:
+                return (
+                    "You've used most of your free tokens this month. "
+                    "Upgrade to Pro for 2M tokens and emotion detection."
+                )
+            if voice_check.get("remaining") is not None and voice_check["remaining"] < 5:
+                return (
+                    "Running low on voice minutes. "
+                    "Pro tier gives you 90 minutes plus 4 situational voices."
+                )
             return (
                 "Ready to create unlimited conversations? "
                 "Upgrade to Pro and unlock emotion detection."
             )
 
         elif current_tier == SubscriptionTier.PRO.value:
+            if voice_check.get("remaining") is not None and voice_check["remaining"] < 15:
+                return (
+                    "Running low on voice time. "
+                    "Business tier includes 300 minutes and all education voices."
+                )
             return (
                 "Need more voice minutes and API webhooks? "
                 "Business tier includes all 7 voices and priority support."

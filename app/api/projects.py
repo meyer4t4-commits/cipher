@@ -219,10 +219,14 @@ async def list_credentials(db: Session = Depends(get_db)):
 @router.post("/credentials", response_model=CredentialResponse)
 async def create_credential(req: CredentialCreate, db: Session = Depends(get_db)):
     """Store a new service credential."""
+    # Encrypt token at rest
+    from app.core.encryption import encrypt_value
+    encrypted_token = encrypt_value(req.token_value)
+
     cred = ServiceCredentialRecord(
         name=req.name,
         service_type=req.service_type,
-        token_value=req.token_value,
+        token_value=encrypted_token,
         project_id=req.project_id,
         additional_fields=json.dumps(req.additional_fields) if req.additional_fields else None,
     )

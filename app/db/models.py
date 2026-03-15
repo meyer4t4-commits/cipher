@@ -152,7 +152,7 @@ class ServiceCredentialRecord(Base):
     project_id = Column(String(36), ForeignKey("projects.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     service_type = Column(String(50), nullable=False)
-    token_value = Column(Text, nullable=False)  # TODO: encrypt at rest
+    token_value = Column(Text, nullable=False)  # Encrypted via app.core.encryption
     additional_fields = Column(Text, nullable=True)  # JSON string
     created_at = Column(DateTime, default=utcnow)
     last_used_at = Column(DateTime, nullable=True)

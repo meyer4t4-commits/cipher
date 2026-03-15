@@ -280,9 +280,32 @@ class ArchivistAgent(BaseAgent):
         # Generate entry ID
         entry_id = f"{source_agent}_{len(self.memory_index)}_{int(datetime.utcnow().timestamp())}"
 
-        # Generate summary (truncated content for now)
-        # TODO: Replace with LLM-based summarization for production
-        summary = content[:500] + ("..." if len(content) > 500 else "")
+        # Generate summary — use LLM for longer content, truncate for short
+        if len(content) > 500:
+            try:
+                from app.services.llm_router import chat_completion
+                from app.models.schemas import ModelTier
+
+                summary_response = await chat_completion(
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            "Summarize the following content in 2-3 concise sentences. "
+                            "Focus on the key facts, decisions, or insights. "
+                            "Be specific, not generic.\n\n"
+                            f"Content:\n{content[:3000]}"
+                        ),
+                    }],
+                    model_tier=ModelTier.FAST,
+                    max_tokens=200,
+                    temperature=0.2,
+                )
+                summary = summary_response.get("content", content[:500])
+            except Exception as e:
+                logger.debug(f"LLM summarization fell back to truncation: {e}")
+                summary = content[:500] + "..."
+        else:
+            summary = content
 
         # Create memory entry
         entry = MemoryEntry(

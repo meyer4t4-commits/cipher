@@ -479,19 +479,49 @@ async def upgrade_tier(
             "note": "Development mode — no payment required",
         }
 
-    # Production: create checkout session
+    # Production: create real checkout sessions
     if req.payment_method == "stripe":
-        # TODO: Integrate Stripe checkout
-        return {
-            "checkout_url": f"https://checkout.stripe.com/pay?tier={target_tier}",
-            "message": "Complete payment to activate your upgrade",
-        }
+        try:
+            from app.services.billing import create_checkout_session
+
+            # Build success/cancel URLs from the gateway base URL
+            base_url = settings.app_url or f"http://{settings.app_host}:{settings.app_port}"
+            checkout_data = create_checkout_session(
+                tier=target_tier,
+                user_email=auth.account.email,
+                success_url=f"{base_url}/dashboard?upgrade=success&tier={target_tier}",
+                cancel_url=f"{base_url}/dashboard?upgrade=cancelled",
+            )
+
+            # Link Stripe customer to our account if not already linked
+            if not auth.account.stripe_customer_id:
+                # The checkout session will create a Stripe customer on payment
+                # We'll link it via webhook when customer.subscription.created fires
+                pass
+
+            return {
+                "checkout_url": checkout_data["checkout_url"],
+                "session_id": checkout_data["session_id"],
+                "tier": target_tier,
+                "message": "Complete payment to activate your upgrade",
+                "expires_at": checkout_data["expires_at"].isoformat(),
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Stripe checkout creation failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create checkout session")
+
     elif req.payment_method == "btcpay":
-        # TODO: Integrate BTCPay
+        # BTCPay integration — requires btcpay_url in settings
+        if not getattr(settings, "btcpay_url", None):
+            raise HTTPException(status_code=501, detail="BTCPay not configured yet")
         return {
             "checkout_url": f"{settings.btcpay_url}/checkout?tier={target_tier}",
             "message": "Complete Bitcoin payment to activate your upgrade",
         }
+
+    raise HTTPException(status_code=400, detail="Invalid payment method. Use 'stripe' or 'btcpay'")
 
 
 # ──────────────────────────────────────────────

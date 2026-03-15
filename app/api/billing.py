@@ -235,12 +235,23 @@ async def get_usage(
         tier_info = billing.get_user_tier(str(current_user.id))
         upgrade_nudge = billing.get_upgrade_nudge(str(current_user.id))
 
+        # Populate actual usage from database
+        current_usage = {}
+        for resource in ["tokens", "conversations", "voice_minutes"]:
+            usage_check = billing.check_usage(str(current_user.id), resource, 0)
+            if usage_check.get("limit") is not None:
+                current_usage[resource] = {
+                    "used": usage_check["limit"] - (usage_check.get("remaining") or 0),
+                    "limit": usage_check["limit"],
+                    "remaining": usage_check.get("remaining"),
+                }
+
         return {
             "user_id": current_user.id,
             "tier": tier_info["tier"],
             "tier_name": tier_info["name"],
             "limits": tier_info["limits"],
-            "current_usage": {},  # TODO: Populate from database
+            "current_usage": current_usage,
             "upgrade_nudge": upgrade_nudge,
         }
 

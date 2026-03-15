@@ -127,6 +127,17 @@ async def lifespan(app: FastAPI):
     providers.append("Ollama (local)")
     logger.info(f"LLM providers configured: {', '.join(providers)}")
 
+    # Initialize Stripe billing (optional — non-fatal if keys not configured)
+    if settings.stripe_secret_key:
+        try:
+            from app.services.billing import init_stripe
+            init_stripe()
+            logger.info("Stripe billing: ACTIVE")
+        except Exception as e:
+            logger.warning(f"Stripe init failed (non-fatal): {e}")
+    else:
+        logger.debug("Stripe not configured — billing in dev mode")
+
     # Voice service status
     if settings.voice_enabled and settings.elevenlabs_api_key:
         logger.info("Voice service enabled (ElevenLabs)")
