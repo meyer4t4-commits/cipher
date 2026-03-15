@@ -557,6 +557,65 @@ async def process_chat(
             capture_error("bypass_error", "orchestrator.shopify_bypass", e, {"message": request.message[:300]})
 
     # ═══════════════════════════════════════════════════════════════════
+    # WEB BUILDER BYPASS — route website creation/modification directly
+    # ═══════════════════════════════════════════════════════════════════
+    _web_builder_keywords = [
+        "build a website", "build me a website", "create a website",
+        "build a storefront", "create a storefront", "generate a storefront",
+        "build a landing page", "create a landing page",
+        "redesign my website", "redesign the website", "redo my website",
+        "make a website", "website for tallowroots", "website for tallow",
+        "build my site", "create my site", "update my site",
+        "web page for", "build a web page",
+    ]
+    if any(kw in msg_lower for kw in _web_builder_keywords):
+        logger.info(f"[WEB BUILDER BYPASS] Detected website request — calling web_builder_agent directly")
+        try:
+            from app.agents.skills.web_builder_agent import WebBuilderAgent
+            from app.agents.models import AgentTask
+
+            agent = WebBuilderAgent()
+
+            # Detect operation from keywords
+            if any(kw in msg_lower for kw in ["storefront", "store", "e-commerce", "ecommerce"]):
+                operation = "generate_storefront"
+            elif any(kw in msg_lower for kw in ["landing page", "landing"]):
+                operation = "generate_page"
+            elif any(kw in msg_lower for kw in ["redesign", "redo", "update", "modify", "improve"]):
+                operation = "modify_site"
+            elif any(kw in msg_lower for kw in ["analyze competitor", "competitor"]):
+                operation = "analyze_competitor"
+            else:
+                operation = "generate_page"
+
+            task = AgentTask(
+                agent_name="web_builder_agent",
+                instruction=request.message,
+                params={
+                    "operation": operation,
+                    "description": request.message,
+                    "brand_name": "TallowRoots" if "tallow" in msg_lower else "",
+                },
+                timeout_seconds=300,
+            )
+            result = await agent.run(task)
+
+            if result.success and result.output:
+                output_text = json.dumps(result.output, indent=2) if isinstance(result.output, dict) else str(result.output)
+                bypass_response = f"Website generated successfully.\n\n{output_text[:2000]}"
+                _persist_context(bypass_response, "web_builder")
+                return ChatResponse(
+                    response=bypass_response,
+                    model_used=model_used,
+                    agent_used="web_builder_agent",
+                    cached=False,
+                )
+        except Exception as e:
+            logger.error(f"[WEB BUILDER BYPASS] Exception: {e}")
+            import traceback
+            logger.error(f"[WEB BUILDER BYPASS] Traceback: {traceback.format_exc()}")
+
+    # ═══════════════════════════════════════════════════════════════════
     # CONTENT EXTRACTION HARD BYPASS — skip LLM routing for URL extraction
     # When Mark sends a YouTube/Twitter/article URL and asks to extract,
     # transcribe, or break it down, we call content_extractor_agent directly.

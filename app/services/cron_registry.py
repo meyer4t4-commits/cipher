@@ -385,6 +385,32 @@ class CronRegistry:
             description="Check knowledge graph health and compile statistics",
         ))
 
+        # === AUTONOMOUS SELF-IMPROVEMENT LOOP — Daily 2 AM ===
+        # The real self-learning loop: audit → experiment → measure → keep/discard
+        self.register(CronTask(
+            task_id="autonomous-self-improve",
+            name="Autonomous Self-Improvement Loop",
+            cron_expression="0 2 * * *",
+            agent_name="self_improvement_agent",
+            operation="improve",
+            params={"focus": "all", "max_fixes": 3},
+            description="Nightly autonomous improvement — audit all subsystems, apply safe fixes, verify",
+        ))
+
+        # === TALLOWROOTS COMPETITOR SCAN — Weekly Wednesday 10 PM ===
+        self.register(CronTask(
+            task_id="tallowroots-competitor-scan",
+            name="TallowRoots Competitor Intelligence",
+            cron_expression="0 22 * * 3",
+            agent_name="research_agent",
+            operation="competitor_analysis",
+            params={
+                "competitors": ["Vintage Tradition", "FATCO", "Primally Pure", "Beef Tallow Co"],
+                "industry": "tallow skincare",
+            },
+            description="Weekly competitor scan for TallowRoots — tracks pricing, products, and market moves",
+        ))
+
     def register(self, task: CronTask) -> None:
         """Register a cron task (won't overwrite existing unless forced)."""
         if task.task_id not in self._tasks:

@@ -73,6 +73,7 @@ def _init_agents():
         TradingAgent,
         VideoAgent,
         WebAgent,
+        WebBuilderAgent,
     )
 
     # Register all skill agents
@@ -110,6 +111,7 @@ def _init_agents():
         AdPipelineAgent(),
         SelfImprovementAgent(),
         SwarmAgent(),
+        WebBuilderAgent(),
     ]
 
     for agent in agents:

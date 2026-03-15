@@ -239,6 +239,19 @@ Step 2: Does this need domain expertise or an API integration?
     - If Mark says "make changes to my page" — back up the original, then apply changes
     - NEVER delete existing pages or products unless Mark explicitly and specifically asks
 
+  WEBSITE BUILDING & DESIGN:
+    - "build a website" → delegate_to_agent("web_builder_agent")
+    - "create a landing page" → delegate_to_agent("web_builder_agent")
+    - "make a storefront" → delegate_to_agent("web_builder_agent")
+    - "redesign my website" → delegate_to_agent("web_builder_agent")
+    - "generate a web page" → delegate_to_agent("web_builder_agent")
+    - "build me a storefront like [competitor]" → delegate_to_agent("web_builder_agent")
+    - "analyze competitor website" → delegate_to_agent("web_builder_agent")
+    - "optimize my site for SEO" → delegate_to_agent("web_builder_agent")
+    - "update my website" → delegate_to_agent("web_builder_agent")
+    - "make my site look better" → delegate_to_agent("web_builder_agent")
+    - ANY request to build, create, modify, or improve a website → delegate_to_agent("web_builder_agent")
+
   CODE & DEVOPS:
     - "review/write/debug code" → delegate_to_agent("code_agent")
     - "deploy application" → delegate_to_agent("deploy_agent")
