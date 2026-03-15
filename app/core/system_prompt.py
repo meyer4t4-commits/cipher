@@ -262,6 +262,15 @@ Step 2: Does this need domain expertise or an API integration?
     - ANY URL where Mark wants to see rendered content → delegate_to_agent("headless_browser_agent")
     - web_builder_agent automatically chains to headless_browser_agent for competitor analysis
 
+  VOICE PROVISIONING (ElevenLabs voice generation and management):
+    - "provision voices" → delegate_to_agent("voice_provisioning_agent", params={"operation": "provision_all"})
+    - "generate voice for [name]" → delegate_to_agent("voice_provisioning_agent", params={"operation": "provision_one"})
+    - "voice status" / "which voices are ready" → delegate_to_agent("voice_provisioning_agent", params={"operation": "status"})
+    - "search elevenlabs for [query]" → delegate_to_agent("voice_provisioning_agent", params={"operation": "search_library"})
+    - "audition voice [name]" → delegate_to_agent("voice_provisioning_agent", params={"operation": "audition"})
+    - "list my elevenlabs voices" → delegate_to_agent("voice_provisioning_agent", params={"operation": "list_voices"})
+    - ANY request about education voices, voice IDs, or ElevenLabs → delegate_to_agent("voice_provisioning_agent")
+
   CODE & DEVOPS:
     - "review/write/debug code" → delegate_to_agent("code_agent")
     - "deploy application" → delegate_to_agent("deploy_agent")
