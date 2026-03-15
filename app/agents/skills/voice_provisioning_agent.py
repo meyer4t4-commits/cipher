@@ -628,3 +628,14 @@ class VoiceProvisioningAgent(BaseAgent):
                 "all_voices": voices,
             },
         )
+
+    async def verify(self, result: AgentResult) -> bool:
+        """Verify voice provisioning results."""
+        if not result.success:
+            return False
+        output = result.output or {}
+        # For provision operations, check that at least one voice was provisioned
+        if "provisioned" in output:
+            return output["provisioned"] > 0 or output.get("message", "").startswith("All")
+        # For status/list, just check we got data
+        return True
