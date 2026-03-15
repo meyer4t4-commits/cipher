@@ -47,7 +47,7 @@ class OutreachAgent(BaseAgent):
             ],
         )
 
-        self._data_dir = Path("./data/expansion_pulse/outreach")
+        self._data_dir = Path("/tmp/cipher_data/expansion_pulse/outreach")
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._tracking_file = self._data_dir / "engagement_tracker.json"
         logger.info("OutreachAgent v2.0.0 initialized — LLM-powered content generation")
