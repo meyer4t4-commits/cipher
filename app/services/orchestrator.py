@@ -94,16 +94,24 @@ _STOCK_PATTERN = re.compile(
 )
 
 _NEWS_PATTERN = re.compile(
-    r'\b(?:latest news|breaking news|what(?:\'?s| is) happening|current events|today(?:\'?s)? news|headlines)\b'
+    r'\b(?:latest|breaking|recent|current|today\'?s?|this week\'?s?)\b.*\b(?:news|events|headlines|developments|updates|stories|trends)\b'
+    r'|'
+    r'\b(?:news|headlines|updates)\b.*\b(?:latest|recent|today|current|breaking)\b'
+    r'|'
+    r'\b(?:what(?:\'?s| is) (?:happening|going on|new|trending))\b'
     r'|'
     r'\b(?:did .+ (?:announce|release|launch|acquire|merge|IPO|resign|fire))\b',
     re.IGNORECASE,
 )
 
 _SEARCH_PATTERN = re.compile(
-    r'\b(?:search for|look up|find me|google|what is the current|latest data on)\b'
+    r'\b(?:search|look up|find me|google|browse|fetch|pull up|get me)\b.*\b(?:for|about|on|the)\b'
     r'|'
-    r'\b(?:how (?:much|many|long|far|old)|when (?:is|was|did|does)|where (?:is|can))\b.*\b(?:today|now|currently|right now|2025|2026)\b',
+    r'\b(?:what is the current|latest data on|latest info on|latest information)\b'
+    r'|'
+    r'\b(?:search the web|web search|internet search|online search)\b'
+    r'|'
+    r'\b(?:how (?:much|many|long|far|old)|when (?:is|was|did|does)|where (?:is|can)|who (?:is|was|won))\b.*\b(?:today|now|currently|right now|202[4-9]|this (?:year|month|week))\b',
     re.IGNORECASE,
 )
 
@@ -1103,7 +1111,7 @@ async def process_chat(
         db.query(MessageRecord)
         .filter_by(conversation_id=conversation_id)
         .order_by(MessageRecord.created_at)
-        .limit(50)
+        .limit(200)
         .all()
     )
 
@@ -1143,8 +1151,11 @@ async def process_chat(
     else:
         messages.append({"role": "user", "content": enriched_message})
 
-    # 6. Build system prompt with hallucination guard
+    # 6. Build system prompt with hallucination guard + current date
+    from datetime import datetime as _dt
+    _today = _dt.now().strftime("%A, %B %d, %Y")
     system_prompt = request.system_prompt or CIPHER_SYSTEM_PROMPT
+    system_prompt = f"CURRENT DATE: {_today}\n\n{system_prompt}"
     system_prompt += HALLUCINATION_GUARD
 
     # Voice personality detection
@@ -1268,7 +1279,7 @@ async def process_chat(
             model_tier=model_tier,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
-            system_prompt=system_prompt if round_num == 0 else None,
+            system_prompt=system_prompt,  # Always include — dropping it causes context loss
             tools=CIPHER_TOOLS,
             tool_choice=current_tool_choice,
         )
