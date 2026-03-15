@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.api import agents, chat, memory, models, system, scanner, voice, notifications, recommendations, media, research, cron, projects
+from app.api import agents, chat, memory, models, system, scanner, voice, notifications, recommendations, media, research, cron, projects, self_improvement
 from app.gateway.api import router as gateway_router
 from app.gateway.premium_routes import availability_router
 import os
@@ -183,6 +183,7 @@ app.include_router(media.router)
 app.include_router(research.router)  # CipherResearch autonomous self-improvement
 app.include_router(cron.router)  # Scheduled tasks (cron registry)
 app.include_router(projects.router)  # Projects filing system + credential vault
+app.include_router(self_improvement.router)  # Self-improvement dashboard + idle training
 app.include_router(gateway_router, prefix="/api/v1")
 app.include_router(availability_router, prefix="/api/v1")
 

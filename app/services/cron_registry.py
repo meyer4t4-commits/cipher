@@ -351,6 +351,20 @@ class CronRegistry:
             description="X/Twitter scan for AI news, crypto signals, and competitor activity",
         ))
 
+        # === IDLE SELF-TRAINING — Every 15 Minutes ===
+        # Checks if user is idle and runs self-improvement if so.
+        # Won't actually train unless user has been idle 30+ minutes
+        # and there's a 2-hour cooldown between training sessions.
+        self.register(CronTask(
+            task_id="idle-self-training",
+            name="Idle Self-Training Check",
+            cron_expression="*/15 * * * *",
+            agent_name="self_improvement_agent",
+            operation="idle_train",
+            params={"trigger": "idle_check"},
+            description="Check if user is idle and run self-improvement training",
+        ))
+
     def register(self, task: CronTask) -> None:
         """Register a cron task (won't overwrite existing unless forced)."""
         if task.task_id not in self._tasks:
@@ -435,6 +449,20 @@ class CronRegistry:
         logger.info(f"Cron executing: {task.task_id} ({task.name})")
         task.last_run = datetime.now()
         task.run_count += 1
+
+        # Special handling for idle self-training — bypasses normal agent executor
+        # because it needs to check idle state and run its own training loop
+        if task.operation == "idle_train":
+            try:
+                from app.services.idle_trainer import maybe_train
+                result = await maybe_train()
+                task.last_result = result
+                task.last_error = None if result.get("action") != "error" else result.get("error")
+                logger.info(f"Idle training check: {result.get('action', 'unknown')}")
+            except Exception as e:
+                task.last_error = str(e)
+                logger.error(f"Idle training failed: {e}")
+            return
 
         if self._executor_callback:
             try:

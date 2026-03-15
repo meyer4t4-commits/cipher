@@ -87,6 +87,46 @@ Focus areas for autonomous self-improvement:
 RESEARCH_MODEL = None  # Auto-detect at runtime
 
 
+def _load_queued_experiments() -> list[dict]:
+    """
+    Load experiment proposals queued by the Insight Absorber.
+
+    The absorber writes experiments to queued_experiments/ when it finds
+    actionable intelligence from extracted content. We consume them here
+    so insights actually lead to experiments, not just orphaned JSON files.
+    """
+    queue_dir = RESEARCH_DIR / "queued_experiments"
+    if not queue_dir.exists():
+        # Also check the /tmp fallback path used by insight_absorber
+        queue_dir = Path("/tmp/cipher_research/queued_experiments")
+        if not queue_dir.exists():
+            return []
+
+    experiments = []
+    for f in sorted(queue_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_source_file"] = str(f)
+            experiments.append(data)
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Failed to load queued experiment {f.name}: {e}")
+    return experiments
+
+
+def _consume_queued_experiment(experiment: dict) -> None:
+    """Move a consumed queued experiment to the processed directory."""
+    source = experiment.get("_source_file", "")
+    if not source or not Path(source).exists():
+        return
+    try:
+        processed_dir = Path(source).parent / "processed"
+        processed_dir.mkdir(parents=True, exist_ok=True)
+        Path(source).rename(processed_dir / Path(source).name)
+        logger.info(f"[RESEARCH] Consumed queued experiment: {Path(source).name}")
+    except Exception as e:
+        logger.debug(f"Failed to move consumed experiment: {e}")
+
+
 def _get_research_model() -> str:
     """Get the best available model for research generation."""
     global RESEARCH_MODEL
@@ -245,6 +285,111 @@ Respond with ONLY the JSON object, no other text."""
     except Exception as e:
         logger.error(f"Failed to generate experiment proposal: {e}")
         return None
+
+
+async def _run_queued_experiment(
+    queued_experiment: dict,
+    project_root: str,
+) -> Optional[ExperimentResult]:
+    """
+    Run an experiment that was queued by the Insight Absorber.
+
+    Unlike LLM-proposed experiments, these come pre-formed from insights.
+    We still do baseline → snapshot → apply → test → keep/discard.
+    """
+    import uuid as _uuid
+
+    experiment_id = f"insight_{_uuid.uuid4().hex[:12]}"
+    start_time = time.time()
+
+    hypothesis = queued_experiment.get("hypothesis", "Insight-driven experiment")
+    target_file = queued_experiment.get("target_file", "")
+    new_content = queued_experiment.get("new_content", "")
+    mod_type = queued_experiment.get("modification_type", "insight_apply")
+
+    if not target_file or not new_content:
+        return ExperimentResult(
+            experiment_id=experiment_id,
+            hypothesis=hypothesis,
+            target_file=target_file or "unknown",
+            modification_type=mod_type,
+            baseline_score=0, experiment_score=0,
+            tests_passed=0, tests_total=0, kept=False,
+            duration_seconds=time.time() - start_time,
+            error="Queued experiment missing target_file or new_content",
+        )
+
+    # Baseline
+    logger.info(f"[INSIGHT EXP] Baseline for: {hypothesis[:60]}")
+    baseline = await run_self_tests()
+    baseline_score = baseline.get("aggregate_score", 0)
+
+    # Snapshot
+    snapshot = FileSnapshot(project_root)
+    full_path = Path(project_root) / target_file
+    if not full_path.exists():
+        return ExperimentResult(
+            experiment_id=experiment_id, hypothesis=hypothesis,
+            target_file=target_file, modification_type=mod_type,
+            baseline_score=baseline_score, experiment_score=baseline_score,
+            tests_passed=baseline["tests_passed"], tests_total=baseline["tests_total"],
+            kept=False, duration_seconds=time.time() - start_time,
+            error=f"Target file not found: {target_file}",
+        )
+
+    snapshot_id = snapshot.take_snapshot(target_file)
+
+    # Apply
+    try:
+        full_path.write_text(new_content, encoding="utf-8")
+    except Exception as e:
+        snapshot.rollback(snapshot_id)
+        return ExperimentResult(
+            experiment_id=experiment_id, hypothesis=hypothesis,
+            target_file=target_file, modification_type=mod_type,
+            baseline_score=baseline_score, experiment_score=baseline_score,
+            tests_passed=baseline["tests_passed"], tests_total=baseline["tests_total"],
+            kept=False, duration_seconds=time.time() - start_time,
+            error=f"Write failed: {e}",
+        )
+
+    # Test
+    await asyncio.sleep(1)
+    try:
+        post = await run_self_tests()
+        exp_score = post.get("aggregate_score", 0)
+    except Exception as e:
+        snapshot.rollback(snapshot_id)
+        return ExperimentResult(
+            experiment_id=experiment_id, hypothesis=hypothesis,
+            target_file=target_file, modification_type=mod_type,
+            baseline_score=baseline_score, experiment_score=0,
+            tests_passed=0, tests_total=baseline["tests_total"],
+            kept=False, duration_seconds=time.time() - start_time,
+            error=f"Post-test crashed: {e}",
+        )
+
+    # Keep/Discard
+    keep = exp_score > baseline_score and post["tests_passed"] >= baseline["tests_passed"]
+    if not keep:
+        snapshot.rollback(snapshot_id)
+        logger.info(f"[INSIGHT EXP] DISCARDED: {baseline_score:.4f} → {exp_score:.4f}")
+    else:
+        logger.info(f"[INSIGHT EXP] KEPT: {baseline_score:.4f} → {exp_score:.4f}")
+
+    return ExperimentResult(
+        experiment_id=experiment_id,
+        hypothesis=f"[INSIGHT] {hypothesis}",
+        target_file=target_file,
+        modification_type=mod_type,
+        baseline_score=baseline_score,
+        experiment_score=exp_score,
+        tests_passed=post["tests_passed"],
+        tests_total=post["tests_total"],
+        kept=keep,
+        duration_seconds=time.time() - start_time,
+        details=queued_experiment.get("reasoning", ""),
+    )
 
 
 async def run_single_experiment(
@@ -494,6 +639,14 @@ async def run_autonomous_loop(
     experiments_kept = 0
     experiments_discarded = 0
     experiments_errored = 0
+    insight_experiments_run = 0
+
+    # ── Phase 0.5: Load queued experiments from Insight Absorber ──
+    queued_experiments = _load_queued_experiments()
+    if queued_experiments:
+        logger.info(f"Found {len(queued_experiments)} queued experiments from Insight Absorber")
+    else:
+        logger.info("No queued experiments from Insight Absorber")
 
     try:
         while experiments_run < max_experiments:
@@ -503,7 +656,6 @@ async def run_autonomous_loop(
                 logger.info(f"Time limit reached ({max_hours}h). Stopping.")
                 break
 
-            # Run one experiment
             experiments_run += 1
             recent = experiment_log.get_recent(15)
 
@@ -513,11 +665,24 @@ async def run_autonomous_loop(
                     f"(kept: {experiments_kept}, discarded: {experiments_discarded}, errors: {experiments_errored})"
                 )
 
-            result = await run_single_experiment(
-                research_program=research_program,
-                recent_experiments=recent,
-                project_root=project_root,
-            )
+            # Prioritize queued insight experiments over LLM-generated ones.
+            # Insight experiments come from real content Cipher absorbed and are
+            # more likely to be useful than random LLM proposals.
+            if queued_experiments:
+                queued = queued_experiments.pop(0)
+                logger.info(f"Running queued insight experiment: {queued.get('hypothesis', 'unknown')[:80]}")
+                result = await _run_queued_experiment(
+                    queued_experiment=queued,
+                    project_root=project_root,
+                )
+                _consume_queued_experiment(queued)
+                insight_experiments_run += 1
+            else:
+                result = await run_single_experiment(
+                    research_program=research_program,
+                    recent_experiments=recent,
+                    project_root=project_root,
+                )
 
             if result:
                 experiment_log.append(result)
@@ -550,6 +715,7 @@ async def run_autonomous_loop(
 
     summary = {
         "total_experiments": experiments_run,
+        "insight_experiments": insight_experiments_run,
         "kept": experiments_kept,
         "discarded": experiments_discarded,
         "errors": experiments_errored,
@@ -561,7 +727,8 @@ async def run_autonomous_loop(
 
     logger.info("=" * 60)
     logger.info("CIPHER AUTONOMOUS RESEARCH LOOP COMPLETE")
-    logger.info(f"Experiments: {experiments_run} (kept: {experiments_kept}, discarded: {experiments_discarded})")
+    logger.info(f"Experiments: {experiments_run} (insight: {insight_experiments_run}, LLM: {experiments_run - insight_experiments_run})")
+    logger.info(f"Kept: {experiments_kept}, Discarded: {experiments_discarded}, Errors: {experiments_errored}")
     logger.info(f"Keep rate: {summary['keep_rate']:.1%}")
     logger.info(f"Runtime: {summary['runtime_hours']:.1f}h")
     logger.info("=" * 60)

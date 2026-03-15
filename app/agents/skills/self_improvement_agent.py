@@ -346,8 +346,10 @@ class SelfImprovementAgent(BaseAgent):
             )},
         ]
 
+        # Use reasoning tier (Opus 4.6) for deep audit — this is where model quality
+        # matters most. Cheap models produce false positives and miss real issues.
         result = await chat_completion(
-            messages=messages, model_tier="default", max_tokens=2000, temperature=0.1,
+            messages=messages, model_tier="reasoning", max_tokens=2000, temperature=0.1,
         )
 
         issues = []
@@ -633,8 +635,9 @@ class SelfImprovementAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def _benchmark(self, task: AgentTask) -> dict:
-        """Run health checks on agents."""
+        """Run health checks on agents — syntax AND imports."""
         agent_name = task.params.get("agent_name", "")
+        skip_imports = task.params.get("skip_imports", False)
 
         if agent_name:
             # Test specific agent
@@ -652,52 +655,89 @@ class SelfImprovementAgent(BaseAgent):
         agent_files = sorted(skills_dir.glob("*_agent.py"))
         agent_files = [af for af in agent_files if not af.name.startswith("__")]
 
-        # Build a single bash command that checks ALL agents at once (fast!)
-        # This avoids spawning 64 subprocesses for 32 agents
+        # ── Phase 1: Syntax checks (fast, batched) ──
         check_script_parts = []
         for af in agent_files:
             check_script_parts.append(
-                f'python3 -c "import ast; ast.parse(open(\'{af}\').read()); print(\'{af.stem}:OK\')" 2>&1 || echo "{af.stem}:FAIL"'
+                f'python3 -c "import ast; ast.parse(open(\'{af}\').read()); print(\'{af.stem}:SYNTAX_OK\')" 2>&1 || echo "{af.stem}:SYNTAX_FAIL"'
             )
-        # Run in batches of 8 to avoid command-line length limits
         batch_size = 8
         all_outputs = []
         for i in range(0, len(check_script_parts), batch_size):
             batch = check_script_parts[i:i + batch_size]
             combined = " && ".join(batch)
-            await self.emit_progress(f"Checking agents {i+1}-{min(i+batch_size, len(agent_files))}...")
+            self.emit_progress(f"Syntax check {i+1}-{min(i+batch_size, len(agent_files))}...")
             batch_result = await self.run_bash(combined, timeout=30)
             all_outputs.append(batch_result.get("stdout", ""))
 
-        # Parse results
-        full_output = "\n".join(all_outputs)
+        syntax_output = "\n".join(all_outputs)
+
+        # ── Phase 2: Import checks (slower but critical) ──
+        import_output = ""
+        if not skip_imports:
+            import_parts = []
+            for af in agent_files:
+                module = af.stem
+                import_parts.append(
+                    f'python3 -c "from app.agents.skills.{module} import *; print(\'{module}:IMPORT_OK\')" 2>&1 || echo "{module}:IMPORT_FAIL"'
+                )
+            import_outputs = []
+            for i in range(0, len(import_parts), batch_size):
+                batch = import_parts[i:i + batch_size]
+                combined = " && ".join(batch)
+                self.emit_progress(f"Import check {i+1}-{min(i+batch_size, len(agent_files))}...")
+                batch_result = await self.run_bash(combined, timeout=60)
+                import_outputs.append(batch_result.get("stdout", ""))
+                import_outputs.append(batch_result.get("stderr", ""))
+            import_output = "\n".join(import_outputs)
+
+        # ── Phase 3: Parse results ──
         for af in agent_files:
             name = af.stem
-            passed = f"{name}:OK" in full_output
-            error_line = ""
-            if not passed:
-                # Extract error from output
-                for line in full_output.split("\n"):
+            syntax_ok = f"{name}:SYNTAX_OK" in syntax_output
+
+            if skip_imports:
+                import_ok = "skipped"
+                import_error = ""
+            else:
+                import_ok = f"{name}:IMPORT_OK" in import_output
+                import_error = ""
+                if not import_ok:
+                    # Extract the actual import error
+                    for line in import_output.split("\n"):
+                        if name in line and ("Error" in line or "Traceback" in line):
+                            import_error = line.strip()[:300]
+                            break
+
+            syntax_error = ""
+            if not syntax_ok:
+                for line in syntax_output.split("\n"):
                     if name in line and "Error" in line:
-                        error_line = line[:200]
+                        syntax_error = line[:200]
                         break
+
             results.append({
                 "agent": name,
-                "syntax_ok": passed,
-                "importable": "skipped",  # import checks are slow; syntax is sufficient for benchmark
-                "error": error_line if not passed else "",
+                "syntax_ok": syntax_ok,
+                "importable": import_ok,
+                "syntax_error": syntax_error if not syntax_ok else "",
+                "import_error": import_error if import_ok is False else "",
             })
 
-        healthy = [r for r in results if r["syntax_ok"] and r["importable"]]
-        broken = [r for r in results if not r["syntax_ok"] or not r["importable"]]
+        healthy = [r for r in results if r["syntax_ok"] and r["importable"] is True]
+        syntax_only = [r for r in results if r["syntax_ok"] and r["importable"] is not True]
+        broken = [r for r in results if not r["syntax_ok"]]
+        import_broken = [r for r in results if r["syntax_ok"] and r["importable"] is False]
 
         return {
             "status": "benchmark_complete",
             "total_agents": len(results),
             "healthy": len(healthy),
-            "broken": len(broken),
+            "syntax_only": len(syntax_only),
+            "broken_syntax": len(broken),
+            "broken_imports": len(import_broken),
             "results": results,
-            "broken_agents": broken,
+            "broken_agents": broken + import_broken,
         }
 
     async def _test_single_agent(self, agent_name: str) -> dict:

@@ -372,6 +372,13 @@ async def process_chat(
     import time as _time_telemetry
     _telemetry_start = _time_telemetry.time()
 
+    # Record user activity for idle training
+    try:
+        from app.services.idle_trainer import record_activity
+        record_activity()
+    except Exception:
+        pass  # Non-critical — don't let idle tracking break chat
+
     # 1. Load or create conversation
     conversation_id = request.conversation_id or str(uuid.uuid4())
     try:
