@@ -529,6 +529,9 @@ AGENT_MODEL_MAP = {
 
     # ── Trading ──
     "trading_agent":        "anthropic/claude-opus-4-6",            # Financial trading = zero error tolerance
+
+    # ── Self-Improvement ──
+    "self_improvement_agent": "anthropic/claude-opus-4-6",          # Self-audit needs deepest reasoning
 }
 
 
