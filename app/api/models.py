@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import UsageLog
+from app.models.schemas import ModelTier
 from app.services.llm_router import MODEL_MAP, check_model_availability, get_provider
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -24,6 +25,17 @@ async def list_models():
             "provider": get_provider(model_id),
         })
     return {"models": models}
+
+
+@router.get("/available")
+async def get_available_models():
+    """Return the active model for each major tier (default, fast, reasoning).
+    Used by the web dashboard to display current model configuration."""
+    return {
+        "default_model": MODEL_MAP.get(ModelTier.DEFAULT, "unknown"),
+        "fast_model": MODEL_MAP.get(ModelTier.FAST, "unknown"),
+        "reasoning_model": MODEL_MAP.get(ModelTier.REASONING, "unknown"),
+    }
 
 
 @router.get("/health")

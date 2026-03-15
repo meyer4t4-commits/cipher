@@ -162,40 +162,46 @@ class SentinelAgent(BaseAgent):
             ),
         ]
 
-    async def validate(self, task: AgentTask) -> Tuple[bool, Optional[str]]:
+    async def validate(self, task: AgentTask) -> bool:
         """Validate task before execution."""
-        if task.operation not in [cap.name for cap in self.capabilities]:
-            return False, f"Unknown operation: {task.operation}"
-        return True, None
+        operation = task.params.get("operation", "")
+        valid_ops = [cap.name for cap in self.capabilities]
+        if operation not in valid_ops:
+            logger.warning(f"[sentinel] Unknown operation '{operation}', valid: {valid_ops}")
+            return False
+        return True
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """Execute the specified operation."""
+        operation = task.params.get("operation", "")
         try:
-            valid, error = await self.validate(task)
-            if not valid:
-                return AgentResult(success=False, error=error, operation=task.operation)
-
-            if task.operation == "monitor_email":
+            if operation == "monitor_email":
                 result = await self._monitor_email()
-            elif task.operation == "monitor_sms":
+            elif operation == "monitor_sms":
                 result = await self._monitor_sms()
-            elif task.operation == "predict_needs":
+            elif operation == "predict_needs":
                 result = await self._predict_needs()
-            elif task.operation == "alert_digest":
+            elif operation == "alert_digest":
                 result = await self._alert_digest()
-            elif task.operation == "auto_respond":
+            elif operation == "auto_respond":
                 result = await self._auto_respond()
             else:
                 result = None
 
             return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
                 success=result is not None,
-                data=result,
-                operation=task.operation,
+                output=result,
             )
         except Exception as e:
             logger.error(f"Sentinel Agent execution failed: {str(e)}")
-            return AgentResult(success=False, error=str(e), operation=task.operation)
+            return AgentResult(
+                task_id=task.task_id,
+                agent_name=self.name,
+                success=False,
+                error=str(e),
+            )
 
     async def verify(self, result: AgentResult) -> bool:
         """Verify the result of execution."""

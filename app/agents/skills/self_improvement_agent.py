@@ -170,7 +170,7 @@ class SelfImprovementAgent(BaseAgent):
             logger.info("[SELF-IMPROVE] Using /tmp fallback for log_dir")
 
     async def validate(self, task: AgentTask) -> bool:
-        cap = task.params.get("capability", "improve")
+        cap = task.params.get("operation") or task.params.get("capability", "improve")
         if cap == "audit":
             subsystem = task.params.get("subsystem", "all")
             if subsystem != "all" and subsystem not in AUDITABLE_SUBSYSTEMS:
@@ -178,7 +178,7 @@ class SelfImprovementAgent(BaseAgent):
         return True
 
     async def execute(self, task: AgentTask) -> AgentResult:
-        cap = task.params.get("capability", "improve")
+        cap = task.params.get("operation") or task.params.get("capability", "improve")
 
         if cap == "audit":
             raw = await self._audit(task)
