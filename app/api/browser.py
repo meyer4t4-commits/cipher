@@ -8,7 +8,7 @@ from typing import Optional
 
 from app.core.logging import logger
 
-router = APIRouter(prefix="/browser", tags=["browser"])
+router = APIRouter(prefix="/api/v1/browser", tags=["browser"])
 
 
 class VisitRequest(BaseModel):
