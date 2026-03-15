@@ -187,12 +187,12 @@ class VoiceProvisioningAgent(BaseAgent):
             description="Provision education voices via ElevenLabs Voice Design API",
             version="1.0.0",
             capabilities=[
-                AgentCapability(name="provision_all", description="Generate + save + write all empty education voices", category="voice", requires_approval=False),
-                AgentCapability(name="provision_one", description="Provision a single voice by name", category="voice", requires_approval=False),
-                AgentCapability(name="search_library", description="Search ElevenLabs shared voice library", category="voice", requires_approval=False),
-                AgentCapability(name="audition", description="Generate TTS sample for a saved voice", category="voice", requires_approval=False),
-                AgentCapability(name="status", description="Check which voices have IDs", category="voice", requires_approval=False),
-                AgentCapability(name="list_voices", description="List all voices in your ElevenLabs account", category="voice", requires_approval=False),
+                AgentCapability(name="provision_all", description="Generate + save + write all empty education voices", category="voice", requires_approval=False, timeout_seconds=300),
+                AgentCapability(name="provision_one", description="Provision a single voice by name", category="voice", requires_approval=False, timeout_seconds=60),
+                AgentCapability(name="search_library", description="Search ElevenLabs shared voice library", category="voice", requires_approval=False, timeout_seconds=30),
+                AgentCapability(name="audition", description="Generate TTS sample for a saved voice", category="voice", requires_approval=False, timeout_seconds=30),
+                AgentCapability(name="status", description="Check which voices have IDs", category="voice", requires_approval=False, timeout_seconds=15),
+                AgentCapability(name="list_voices", description="List all voices in your ElevenLabs account", category="voice", requires_approval=False, timeout_seconds=30),
             ],
         )
         self.api_key = settings.elevenlabs_api_key or os.environ.get("ELEVENLABS_API_KEY", "")

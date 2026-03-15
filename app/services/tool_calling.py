@@ -1250,11 +1250,23 @@ async def _exec_delegate_to_agent(args: dict) -> str:
                 "available_agents": available,
             })
 
-        # Build the task
+        # Build the task — look up capability timeout if operation specified
+        timeout = 30  # default
+        agent_instance = registry.get_agent(agent_name) if hasattr(registry, 'get_agent') else None
+        if agent_instance and params.get("operation"):
+            for cap in getattr(agent_instance, 'capabilities', []):
+                if cap.name == params["operation"] and hasattr(cap, 'timeout_seconds') and cap.timeout_seconds:
+                    timeout = cap.timeout_seconds
+                    break
+        # For provision_all and other long-running ops, ensure minimum 120s
+        if params.get("operation") in ("provision_all", "full_audit", "find_and_enrich", "shopify_fix"):
+            timeout = max(timeout, 300)
+
         task = AgentTask(
             agent_name=agent_name,
             instruction=instruction,
             params=params,
+            timeout_seconds=timeout,
         )
 
         # Execute via the executor
