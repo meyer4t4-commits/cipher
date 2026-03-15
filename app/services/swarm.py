@@ -201,6 +201,7 @@ class PredictionSwarm:
 
         try:
             from app.services.llm_router import chat_completion
+            from app.models.schemas import ModelTier
 
             prompt = (
                 f"You are a {stance_config['label']} analyst (assigned agent: {perspective.agent_name}).\n\n"
@@ -214,11 +215,11 @@ class PredictionSwarm:
             )
 
             # Use reasoning model for neutral (highest weight), default for others
-            model = "reasoning" if perspective.stance == "neutral" else "default"
+            tier = ModelTier.REASONING if perspective.stance == "neutral" else ModelTier.DEFAULT
 
             response = await chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model=model,
+                model_tier=tier,
                 temperature=0.4 if perspective.stance == "neutral" else 0.6,
                 max_tokens=600,
             )
@@ -245,6 +246,7 @@ class PredictionSwarm:
         """Synthesize all perspectives into a consensus."""
         try:
             from app.services.llm_router import chat_completion
+            from app.models.schemas import ModelTier
 
             # Build perspective summary
             summaries = []
@@ -285,7 +287,7 @@ Weight the neutral analyst highest. Flag any perspective that strongly disagrees
 
             response = await chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model="reasoning",
+                model_tier=ModelTier.REASONING,
                 temperature=0.2,
                 max_tokens=800,
             )
