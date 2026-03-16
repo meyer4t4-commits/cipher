@@ -164,8 +164,30 @@ async def lifespan(app: FastAPI):
         _agent_executor = get_executor()
         _agent_registry = get_registry()
 
+        async def _notify_telegram(message: str):
+            """Send cron result to owner via Telegram."""
+            try:
+                import httpx as _httpx
+                bot_token = settings.telegram_bot_token
+                # Use first allowed user as owner chat_id
+                owner_id = settings.allowed_telegram_users[0] if settings.allowed_telegram_users else None
+                if not bot_token or not owner_id:
+                    return
+                async with _httpx.AsyncClient() as client:
+                    await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={
+                            "chat_id": owner_id,
+                            "text": message[:4000],  # Telegram max ~4096
+                            "parse_mode": "HTML",
+                        },
+                        timeout=15.0,
+                    )
+            except Exception as e:
+                logger.warning(f"Cron Telegram notify failed: {e}")
+
         async def _cron_execute_agent(agent_name: str, operation: str, params: dict):
-            """Bridge between cron registry and agent executor."""
+            """Bridge between cron registry and agent executor — runs agent + notifies owner."""
             if not _agent_registry.is_registered(agent_name):
                 raise ValueError(f"Agent '{agent_name}' not registered")
             task = AgentTask(
@@ -175,6 +197,20 @@ async def lifespan(app: FastAPI):
                 timeout_seconds=300,
             )
             result = await _agent_executor.execute(task, db=None)
+
+            # ── Notify owner via Telegram ──
+            status = "✅" if result.success else "❌"
+            output_preview = str(result.output)[:2000] if result.output else "No output"
+            error_text = f"\n\n<b>Error:</b> {result.error}" if result.error else ""
+            time_ms = f"{result.execution_time_ms:.0f}ms" if result.execution_time_ms else "?"
+
+            msg = (
+                f"{status} <b>Cron: {agent_name}.{operation}</b>\n"
+                f"⏱ {time_ms}{error_text}\n\n"
+                f"{output_preview}"
+            )
+            await _notify_telegram(msg)
+
             return {
                 "success": result.success,
                 "output": str(result.output)[:500] if result.output else None,
