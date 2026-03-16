@@ -21,7 +21,11 @@ from app.core.config import settings
 from app.core.logging import logger
 
 # Cipher API base URL (talks to the local FastAPI server)
-API_BASE = f"http://localhost:{settings.app_port}/api/v1"
+# Use 127.0.0.1 instead of localhost to avoid DNS resolution issues in containers
+# Railway sets $PORT dynamically — use it if available, fall back to app_port
+import os
+_port = os.environ.get("PORT", str(settings.app_port))
+API_BASE = f"http://127.0.0.1:{_port}/api/v1"
 
 # Track conversation IDs per Telegram user
 user_conversations: dict[int, str] = {}
@@ -75,7 +79,7 @@ async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /memory <search query>")
         return
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(retries=2), timeout=30.0) as client:
         response = await client.post(
             f"{API_BASE}/memory/recall",
             json={"query": query, "n_results": 5},
@@ -107,7 +111,7 @@ async def remember_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /remember <text to remember>")
         return
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(retries=2), timeout=30.0) as client:
         response = await client.post(
             f"{API_BASE}/memory/store",
             json={
@@ -131,7 +135,7 @@ async def models_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
         return
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(retries=2), timeout=30.0) as client:
         response = await client.get(f"{API_BASE}/models/", timeout=10)
 
     if response.status_code == 200:
@@ -147,7 +151,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
         return
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(retries=2), timeout=30.0) as client:
         response = await client.get(f"{API_BASE}/system/health", timeout=10)
 
     if response.status_code == 200:
@@ -199,7 +203,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     model_tier = user_model_tier.get(user_id, "default")
 
     try:
-        async with httpx.AsyncClient() as client:
+        transport = httpx.AsyncHTTPTransport(retries=2)
+        async with httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(180.0, connect=10.0)) as client:
             response = await client.post(
                 f"{API_BASE}/chat/",
                 json={
@@ -208,7 +213,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "model_tier": model_tier,
                     "include_memory": True,
                 },
-                timeout=120,
             )
 
         if response.status_code == 200:
