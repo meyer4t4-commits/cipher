@@ -315,7 +315,7 @@ async def _handle_orchestrator(update: Update, force: bool = False):
             response = await client.post(
                 f"{API_BASE}/chat/",
                 json={
-                    "message": user_text,
+                    "message": f"[TELEGRAM — keep response under 500 words, no markdown headers, no code blocks unless asked, be concise and conversational] {user_text}",
                     "conversation_id": conversation_id,
                     "model_tier": model_tier,
                     "include_memory": True,
