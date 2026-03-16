@@ -225,8 +225,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cron registry failed to start (non-fatal): {e}")
 
+    # ── Start Telegram Bot (polling mode) ──
+    _bot_app = None
+    try:
+        from app.bot.telegram import create_bot_application
+        _bot_app = create_bot_application()
+        if _bot_app:
+            await _bot_app.initialize()
+            await _bot_app.start()
+            await _bot_app.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram bot @cipherisbot is running (polling mode)")
+        else:
+            logger.info("Telegram bot disabled (no bot token)")
+    except Exception as e:
+        logger.warning(f"Telegram bot failed to start (non-fatal): {e}")
+
     yield
     logger.info("Cipher shutting down")
+
+    # Stop Telegram bot on shutdown
+    try:
+        if _bot_app:
+            await _bot_app.updater.stop()
+            await _bot_app.stop()
+            await _bot_app.shutdown()
+            logger.info("Telegram bot stopped")
+    except Exception:
+        pass
 
     # Stop cron registry on shutdown
     try:
