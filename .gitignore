@@ -30,6 +30,14 @@ data/
 .vscode/
 .idea/
 
+# Xcode / iOS
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcarchive
+*.ipa
+*.app.dSYM.zip
+
 # OS
 .DS_Store
 Thumbs.db
@@ -43,7 +51,6 @@ htmlcov/
 # Docker
 docker/volumes/
 node_modules/
-frontend/node_modules/
 
 # Infrastructure secrets
 infra/nginx/ssl/
@@ -67,5 +74,4 @@ workspace/
 *.ogg
 voice_replies/
 post_processing/
-content/X_CONTENT_STRATEGY.md
 .DS_Store

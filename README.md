@@ -1,128 +1,155 @@
-# Cipher (Backend)
+# Cipher
 
-**Sovereign AI intelligence daemon — backend for a personal, multi-modal AI operating system.**
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green?logo=fastapi)](https://fastapi.tiangolo.com/) [![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)](https://developer.apple.com/xcode/swiftui/) [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> This repo (`meyer4t4-commits/orchid`) is the original backend engine. The project has since been unified under the **Cipher** identity.
+A multi-tenant AI platform combining a native iOS client, a multi-provider LLM orchestration backend, and a 30+ skill agent framework — with production billing, telephony, and messaging built in from day one.
 
-Cipher is a full-stack AI system I built as proof of work for agentic / LLM-systems engineering roles. It is not a single chatbot — it is a personal intelligence layer that routes across models, remembers context, dispatches work to specialized agents, and communicates through its own phone number, Telegram bot, iOS app, email, Slack, and web dashboard.
+Originally prototyped under the codename **Orchid** as a local LLM router and Telegram assistant, Cipher evolved into a full product: subscription billing through Stripe, a native SwiftUI mobile app, multi-channel communication (SMS, voice, Telegram, Slack, email), and an extensible agent system spanning trading, research, deployment, and scheduling.
 
----
+## What it does
 
-## What it actually does
-
-1. **Understand intent** — classifies every request and picks the right agent skill.
-2. **Route across models** — uses LiteLLM to choose Claude, Groq/Llama, GPT‑4o, DeepSeek, xAI/Grok, or local Ollama per task tier.
-3. **Remember** — stores conversations, facts, and operational playbooks in ChromaDB (+ Pinecone configured as production upgrade) and SQLite.
-4. **Act** — dispatches to 30+ skill agents: shell commands, code, file ops, web browsing, research, scheduling, trading (paper), real‑estate analysis, outreach, deployment, media generation, voice cloning/provisioning, and more.
-5. **Verify & approve** — every agent result runs through `verify()`; risky actions require operator approval.
-6. **Communicate** — replies via Telegram, SMS/voice through its own Twilio number, email, Slack, and a native iOS app.
-7. **Bill** — subscription tiers (Free / Pro / Business / Enterprise) through Stripe Checkout + Billing Portal, enforced by an Elysian Gateway auth layer.
-
----
+Cipher lets a user talk to a single assistant across multiple surfaces — iOS app, SMS, voice call, Telegram, Slack, or email — and have that assistant reason with the right model for the task, remember context long-term, and take real action through a library of specialized agents.
 
 ## Architecture
 
+```mermaid
+graph TD
+    User((User))
+    iOS[CipherApp — SwiftUI]
+    TG[Telegram Bot]
+    COMMS[Communication Layer]
+    API[FastAPI Backend]
+    GATE[Gateway + Auth]
+    ORCH[Agent Orchestrator]
+    ROUTER[LLM Router]
+    MEM[Memory Service]
+    MEM_STORE[(ChromaDB / Pinecone)]
+    DB[(PostgreSQL / SQLite)]
+    BILL[Stripe Billing]
+    TW[Twilio SMS/Voice]
+    SL[Slack]
+    EM[Email SMTP/IMAP]
+
+    User --> iOS
+    User --> TG
+    User --> COMMS
+    iOS --> GATE
+    TG --> GATE
+    COMMS --> TW
+    COMMS --> SL
+    COMMS --> EM
+    COMMS --> GATE
+    GATE --> API
+    API --> ORCH
+    API --> ROUTER
+    API --> MEM
+    API --> BILL
+    MEM --> MEM_STORE
+    API --> DB
+    ORCH --> ROUTER
+    ROUTER --> |reasoning| Claude
+    ROUTER --> |fast| Groq
+    ROUTER --> |local| Ollama
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                           Clients                                │
-│  Telegram bot   iOS app (SwiftUI)   Web dashboard   SMS/Voice │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────────┐
-│                         Cipher Core                              │
-│  FastAPI  ·  LiteLLM router  ·  JWT auth  ·  Elysian Gateway     │
-│  ChromaDB/Pinecone memory  ·  SQLite history                    │
-│  Celery + Redis async tasks  ·  Brave/X/ATTOM/news integrations │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────────┐
-│                       Agent Framework                              │
-│  intent → registry → executor → skill agent → verify → history    │
-│  shell · code · file · web · research · deploy · communication  │
-│  trading · real estate · scheduler · monitor · sentinel · swarm   │
-└─────────────────────────────────────────────────────────────────┘
+
+### Components
+
+| Layer | Stack | What it does |
+|-------|-------|--------------|
+| **iOS App** (`CipherApp/`) | SwiftUI, 48 Swift files, TestFlight-ready | Chat, voice cloning/settings, agent dashboard, cron/scheduling UI, research, media generation, projects, account settings |
+| **Backend** (`app/`) | FastAPI, Pydantic v2, SQLAlchemy/Alembic, Celery/Redis | 20+ routers for auth, billing, chat, cron, media, memory, models, research, scanner, swarm, tasks, voice |
+| **Agent framework** | Typed `Agent` base class + registry + executor | Skill agents implement a common contract with validate/execute/verify lifecycle and approval gates |
+| **Model routing** | LiteLLM | Routes requests across Claude, Groq/Llama, and local Ollama models by task type |
+| **Memory** | ChromaDB + SQLite, Pinecone upgrade path | Vector-backed long-term memory seeded with operational playbooks |
+| **Communication** | Twilio, Telegram, Slack, SMTP/IMAP | Unified `communication_agent` sends/receives across every channel under one user context |
+| **Billing** | Stripe | Free / Pro ($29) / Business ($79) / Enterprise ($199) tiers, Checkout, Billing Portal, webhooks, tier-enforced routes |
+| **Infra** | Docker, Railway, Fly.io, launchd, nginx | Production deployment configs, hardened Docker compose, background Celery workers |
+
+## Key engineering decisions
+
+- **Model tiering over a single model.** Routing by task type (reasoning, fast, code, local) rather than always calling the most expensive model trades cost and latency deliberately.
+- **Unified agent interface.** Every skill (trading, comms, deploy, research) implements a common agent contract, so new capabilities plug into the same orchestration and permission layer.
+- **Tier-gated everything.** Billing tier is enforced at the route and agent level, so upgrading a plan immediately changes what the assistant is allowed to do for that user.
+- **Multi-channel, single identity.** A message via SMS, Telegram, or the iOS app resolves to the same user context and memory instead of being siloed per channel.
+
+## Project structure
+
+```text
+.
+├── app/                # FastAPI backend: API, agents, services, core, db, gateway
+├── CipherApp/          # Native iOS client (SwiftUI)
+├── dashboard/          # Standalone HTML dashboard served by the API
+├── infra/              # Docker, nginx, launchd, and deployment scripts
+├── tests/              # pytest suite
+├── Dockerfile          # Multi-stage production image
+├── docker-compose.yml  # Local + production orchestration
+├── pyproject.toml      # Python project metadata
+├── requirements.txt    # Production dependencies
+├── start_cipher.sh     # Local startup script
+├── deploy.sh           # One-command Railway deployment
+└── README.md
 ```
-
-Repository layout:
-
-| Directory | What lives there |
-|-----------|------------------|
-| `app/api` | 20 FastAPI routers: auth, billing, chat, cron, media, memory, models, notifications, projects, research, scanner, self‑improvement, swarm, system, tasks, voice |
-| `app/agents` | Framework base, registry, executor, intent classifier, 30+ skill agents |
-| `app/services` | LLM router, memory, tool calling, billing, scanner orchestrator |
-| `app/bot` | Telegram bot integration |
-| `app/db` | SQLAlchemy models + Alembic migrations |
-| `app/gateway` | Elysian Gateway — auth, guards, premium route enforcement |
-| `CipherApp` | SwiftUI iOS client (chat, voice cloning, agents, cron, dashboard, research, media, projects, settings) |
-| `frontend` | Next.js + Tailwind web dashboard |
-| `dashboard` | Standalone HTML dashboard served by FastAPI |
-| `desktop` | Desktop app shell |
-| `infra` | Railway, Fly.io, Docker, nginx, launchd configs |
-| `docs` | Architecture and implementation deep-dives |
-| `scripts` | Deployment, voice, validation, and deck-generation scripts |
-| `tests` | Pytest suite |
-
----
-
-## Tech stack
-
-- **Backend:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy + Alembic, Uvicorn
-- **Model routing:** LiteLLM (Anthropic, OpenAI, Groq, DeepSeek, xAI, Ollama)
-- **Memory:** ChromaDB vector store, SQLite conversation history; Pinecone configured for production scale
-- **Auth:** JWT (python-jose + passlib) with Elysian Gateway tier enforcement
-- **Payments:** Stripe Checkout, Billing Portal, webhook handling
-- **Communication:** Twilio (own SMS/voice number), email SMTP/IMAP, Slack, Telegram, X/Twitter API
-- **Async tasks:** Celery + Redis
-- **Search/data:** Brave Search, ATTOM real estate, NewsAPI, headless browser automation
-- **Frontend:** Next.js, React, Tailwind CSS
-- **Mobile:** Swift, SwiftUI (48 source files, TestFlight-ready build)
-- **Deployment:** Docker, Railway, Fly.io, macOS launchd
-
----
-
-## Key design decisions
-
-- **Model-agnostic routing with LiteLLM.** Agents request a task tier (`reasoning`, `fast`, `code`, `local`) and the router picks the provider. Swapping from Claude to Groq to local Ollama is one config change.
-- **Every agent must implement `verify()`.** No agent output reaches the operator without a self-check step, which cuts hallucinated tool calls and bad shell commands.
-- **Approval gates for risky actions.** Trades, git pushes, outbound emails/SMS, destructive file ops, and Stripe-affecting actions require explicit operator sign-off.
-- **Typed signal model.** Agents return structured `AgentSignal` objects with confidence, reasoning chain, and warnings so multi-agent swarms can vote or escalate.
-- **Persistent operational memory.** Memory is seeded with playbooks on startup and augmented via ChromaDB so Cipher remembers long project context across sessions.
-- **Self-improvement loop.** Research, swarm, and self-improvement agents can propose upgrades; outcomes are logged and feed back into routing.
-
----
 
 ## Quick start
 
-```bash
-git clone https://github.com/meyer4t4-commits/orchid.git
-cd orchid
-cp .env.example .env
-# Add your API keys, then:
+### Backend
 
-# Python path
-python -m venv .venv
+```bash
+# 1. Clone and enter the repo
+cd cipher
+
+# 2. Create a Python virtual environment and install dependencies
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
 
-# Or Docker
-docker compose up -d
+# 3. Configure environment
+cp .env.example .env
+# Edit .env and add your API keys
+
+# 4. Run the server
+./start_cipher.sh
+# or directly:
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-API docs: `http://localhost:8000/docs`
+Open `http://localhost:8000/docs` for the interactive API documentation.
 
----
+### iOS app
 
-## Tests
+```bash
+cd CipherApp
+xcodebuild -project CipherApp.xcodeproj -scheme CipherApp -destination 'platform=iOS Simulator,name=iPhone 16'
+```
+
+Or open `CipherApp/CipherApp.xcodeproj` in Xcode and run on a simulator or device.
+
+## Testing
 
 ```bash
 pytest
 ```
 
-Covers agent registry, intent classification, API contracts, and upgrade-path validation.
+The test suite covers agent base classes, intent classification, registry routing, and core API endpoints.
 
----
+## Deployment
 
-## Project status
+- **Docker:** `docker compose up -d`
+- **Railway:** `./deploy.sh`
+- **Fly.io:** Uses `fly.toml` in repo root.
 
-Built as a solo engineering project. The backend, agent framework, Stripe billing, Telegram bot, and iOS app are functional; the iOS client reached TestFlight. This repo exists as proof of work for agentic AI / LLM systems engineering roles.
+## Status
+
+Actively developed. Core backend, agent framework, billing integration, and communication layer are functional; the iOS app is TestFlight-ready.
+
+## Tech stack
+
+- **Backend:** Python, FastAPI, Celery, SQLAlchemy, Alembic, Pydantic, Redis
+- **Mobile:** Swift, SwiftUI, Combine
+- **ML/AI:** LiteLLM, Anthropic Claude, Groq, Ollama, ChromaDB, Pinecone
+- **Payments / Comms:** Stripe, Twilio
+- **Infra:** Docker, Railway, Fly.io, launchd, nginx
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
