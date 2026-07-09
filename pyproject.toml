@@ -1,7 +1,7 @@
 [project]
-name = "cipher"
+name = "orchid"
 version = "0.2.0"
-description = "Cipher - Sovereign AI Intelligence Daemon by Elysian Protocol"
+description = "Orchid — sovereign multi-agent AI operating system"
 requires-python = ">=3.12"
 authors = [
     { name = "Mark Meyer", email = "mark@elysianlabs.io" }

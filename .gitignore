@@ -44,3 +44,17 @@ firebase-service-account.json
 # Celery
 celerybeat-schedule
 celerybeat-schedule.db
+.next/
+tsconfig.tsbuildinfo
+.wrangler/cache/
+workspace/
+*.pack.gz
+.clawhub
+.openclaw
+*.wav
+*.ogg
+voice_replies/
+post_processing/
+content/X_CONTENT_STRATEGY.md
+.DS_Store
+
