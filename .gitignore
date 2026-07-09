@@ -9,6 +9,18 @@ build/
 
 # Environment
 .env
+.env.*
+!.env.example
+.env.local
+*.secret
+secrets/
+credentials/
+
+# TLS / keys
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Data (local databases and vector stores)
 data/
@@ -57,4 +69,3 @@ voice_replies/
 post_processing/
 content/X_CONTENT_STRATEGY.md
 .DS_Store
-
