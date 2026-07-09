@@ -1,13 +1,27 @@
 # ============================================================
-# Cipher - Production Docker Compose (Elysian Protocol)
+# Cipher - Local + Production Docker Compose
 #
 # Usage:
 #   Development:  docker compose up -d
 #   Production:   docker compose --profile production up -d
-#   Monitoring:   docker compose --profile monitoring up -d
 # ============================================================
 
 services:
+  # --- Redis (task queue + cache) ---
+  redis:
+    image: redis:7-alpine
+    container_name: cipher-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   # --- Cipher API Server ---
   cipher:
     build:
@@ -15,95 +29,17 @@ services:
       dockerfile: Dockerfile
     container_name: cipher-api
     ports:
-      - "127.0.0.1:8000:8000"    # Bind to localhost ONLY — never 0.0.0.0 in production
+      - "127.0.0.1:8000:8000"    # Bind to localhost ONLY in development
     env_file:
       - .env
     environment:
       - APP_ENV=${APP_ENV:-development}
-      - REDIS_URL=redis://redis:6379/0
-    volumes:
-      - cipher-data:/app/data          # Persist SQLite + ChromaDB
-      - ./dashboard:/app/dashboard      # Dashboard hot-reload
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 8G           # M5 Max 48GB — plenty of headroom
-          cpus: "4.0"
-        reservations:
-          memory: 1G
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-    security_opt:
-      - no-new-privileges:true
-    read_only: false
-    tmpfs:
-      - /tmp:size=256M
-
-  # --- Redis (task queue + caching) ---
-  redis:
-    image: redis:7-alpine
-    container_name: cipher-redis
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-cipher-redis-2026}
-      --appendonly yes
-      --save 60 1000
-    ports:
-      - "127.0.0.1:6379:6379"    # Localhost only
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-cipher-redis-2026}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.5"
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:size=64M
-
-  # --- Celery Worker (background tasks: overnight training, scanners) ---
-  worker:
-    build: .
-    container_name: cipher-worker
-    command: >
-      celery -A app.services.tasks worker
-      --loglevel=info
-      --concurrency=2
-      --max-tasks-per-child=50
-      --without-heartbeat
-    env_file:
-      - .env
-    environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-cipher-redis-2026}@redis:6379/0
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/cipher.db}
     volumes:
       - cipher-data:/app/data
     depends_on:
       redis:
-        condition: service_healthy
-      cipher:
         condition: service_healthy
     restart: unless-stopped
     deploy:
@@ -119,7 +55,32 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # --- Celery Beat (scheduled tasks: scanner intervals, overnight training trigger) ---
+  # --- Celery Worker (background tasks) ---
+  worker:
+    build: .
+    container_name: cipher-worker
+    command: >
+      celery -A app.services.tasks worker
+      --loglevel=info
+      --concurrency=2
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-cipher-redis-2026}@redis:6379/0
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/cipher.db}
+    volumes:
+      - cipher-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # --- Celery Beat (scheduled tasks) ---
   beat:
     build: .
     container_name: cipher-beat
@@ -131,6 +92,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-cipher-redis-2026}@redis:6379/0
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/cipher.db}
     volumes:
       - cipher-data:/app/data
     depends_on:
@@ -142,8 +104,6 @@ services:
         limits:
           memory: 256M
           cpus: "0.25"
-    security_opt:
-      - no-new-privileges:true
 
   # --- Nginx Reverse Proxy (production profile) ---
   nginx:
@@ -159,38 +119,13 @@ services:
       - nginx-cache:/var/cache/nginx
     depends_on:
       cipher:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: "0.25"
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:size=32M
-      - /var/run:size=16M
-
-  # --- Watchtower (auto-update containers — production profile) ---
-  watchtower:
-    image: containrrr/watchtower
-    container_name: cipher-watchtower
-    profiles: ["production"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=86400    # Check once daily
-      - WATCHTOWER_INCLUDE_STOPPED=false
-      - WATCHTOWER_LABEL_ENABLE=false
-    restart: unless-stopped
 
 volumes:
   cipher-data:
